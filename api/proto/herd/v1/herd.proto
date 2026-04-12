@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package herd.v1;
+
+option go_package = "github.com/nmstory/herd/api/proto/herd/v1;herdv1";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+service HerdService {
+    rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+    rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+    rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+}
+
+enum DeviceState {
+    DEVICE_STATE_UNSPECIFIED = 0;
+    DEVICE_STATE_IDLE = 1;
+    DEVICE_STATE_LEASED = 2;
+    DEVICE_STATE_UNHEALTHY = 3;
+    DEVICE_STATE_OFFLINE = 4;
+}
+
+message Device {
+    string id = 1;
+    map<string, string> labels = 2;  // model, os, arch, etc. (todo: define all labels)
+    DeviceState state = 3;
+    google.protobuf.Timestamp last_heartbeat = 4;
+}
+
+message ListDevicesRequest {
+    map<string, string> selector = 1;  // empty: all devices
+}
+
+message ListDevicesResponse {
+    repeated Device devices = 1;
+}
+
+message AcquireLeaseRequest {
+    map<string, string> selector = 1;
+    google.protobuf.Duration duration = 2;
+}
+
+message Lease {
+    string id = 1;
+    string device_id = 2;
+    google.protobuf.Timestamp expires_at = 3;
+}
+
+message AcquireLeaseResponse {
+    Lease lease = 1;
+}
+
+message ReleaseLeaseRequest {
+    string lease_id = 1;
+}
+
+message ReleaseLeaseResponse {}
