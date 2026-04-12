@@ -1,0 +1,121 @@
+devices:
+  - id: dev-001
+    labels:
+      model: rpi4
+      os: linux
+      arch: arm64
+      zone: us-east
+  - id: dev-002
+    labels:
+      model: rpi4
+      os: linux
+      arch: arm64
+      zone: us-east
+  - id: dev-003
+    labels:
+      model: rpi4
+      os: linux
+      arch: arm64
+      zone: us-west
+  - id: dev-004
+    labels:
+      model: rpi5
+      os: linux
+      arch: arm64
+      zone: us-west
+  - id: dev-005
+    labels:
+      model: rpi5
+      os: linux
+      arch: arm64
+      zone: eu-central
+  - id: dev-006
+    labels:
+      model: rpi5
+      os: linux
+      arch: arm64
+      zone: eu-central
+  - id: dev-007
+    labels:
+      model: jetson-nano
+      os: linux
+      arch: arm64
+      zone: us-east
+  - id: dev-008
+    labels:
+      model: jetson-nano
+      os: linux
+      arch: arm64
+      zone: us-west
+  - id: dev-009
+    labels:
+      model: jetson-orin
+      os: linux
+      arch: arm64
+      zone: us-east
+  - id: dev-010
+    labels:
+      model: jetson-orin
+      os: linux
+      arch: arm64
+      zone: eu-central
+  - id: dev-011
+    labels:
+      model: x86-vm
+      os: linux
+      arch: amd64
+      zone: us-east
+  - id: dev-012
+    labels:
+      model: x86-vm
+      os: linux
+      arch: amd64
+      zone: us-east
+  - id: dev-013
+    labels:
+      model: x86-vm
+      os: linux
+      arch: amd64
+      zone: us-west
+  - id: dev-014
+    labels:
+      model: x86-vm
+      os: windows
+      arch: amd64
+      zone: us-west
+  - id: dev-015
+    labels:
+      model: x86-vm
+      os: windows
+      arch: amd64
+      zone: eu-central
+  - id: dev-016
+    labels:
+      model: mac-mini-m2
+      os: darwin
+      arch: arm64
+      zone: us-east
+  - id: dev-017
+    labels:
+      model: mac-mini-m2
+      os: darwin
+      arch: arm64
+      zone: us-west
+  - id: dev-018
+    labels:
+      model: mac-mini-m1
+      os: darwin
+      arch: arm64
+      zone: eu-central
+  - id: dev-019
+    labels:
+      model: orangepi-5
+      os: linux
+      arch: arm64
+      zone: us-east
+  - id: dev-020
+    labels:
+      model: orangepi-5
+      os: linux
+      arch: arm64
+      zone: eu-central
