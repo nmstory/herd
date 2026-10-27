@@ -39,12 +39,15 @@ message ListDevicesResponse {
 message AcquireLeaseRequest {
     map<string, string> selector = 1;
     google.protobuf.Duration duration = 2;
+    string holder = 3;           // identity of the client taking the lease
+    string idempotency_key = 4;  // retries with the same (holder, key) return the original lease
 }
 
 message Lease {
     string id = 1;
     string device_id = 2;
     google.protobuf.Timestamp expires_at = 3;
+    string holder = 4;
 }
 
 message AcquireLeaseResponse {
@@ -53,6 +56,7 @@ message AcquireLeaseResponse {
 
 message ReleaseLeaseRequest {
     string lease_id = 1;
+    string holder = 2;
 }
 
 message ReleaseLeaseResponse {}
