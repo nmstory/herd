@@ -253,20 +253,20 @@ func testRelease(t *testing.T, newStore Factory) {
 		t.Fatal(err)
 	}
 
-	if err := s.Release(ctx, l.ID, "bob"); !errors.Is(err, lease.ErrNotHolder) {
+	if _, err := s.Release(ctx, l.ID, "bob"); !errors.Is(err, lease.ErrNotHolder) {
 		t.Errorf("release by bob: got %v, want ErrNotHolder", err)
 	}
-	if err := s.Release(ctx, "00000000-0000-4000-8000-000000000000", "alice"); !errors.Is(err, lease.ErrLeaseNotFound) {
+	if _, err := s.Release(ctx, "00000000-0000-4000-8000-000000000000", "alice"); !errors.Is(err, lease.ErrLeaseNotFound) {
 		t.Errorf("release unknown: got %v, want ErrLeaseNotFound", err)
 	}
-	if err := s.Release(ctx, "not-a-uuid", "alice"); !errors.Is(err, lease.ErrLeaseNotFound) {
+	if _, err := s.Release(ctx, "not-a-uuid", "alice"); !errors.Is(err, lease.ErrLeaseNotFound) {
 		t.Errorf("release malformed id: got %v, want ErrLeaseNotFound", err)
 	}
 
-	if err := s.Release(ctx, l.ID, "alice"); err != nil {
+	if _, err := s.Release(ctx, l.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Release(ctx, l.ID, "alice"); err != nil {
+	if _, err := s.Release(ctx, l.ID, "alice"); err != nil {
 		t.Errorf("second release: got %v, want nil", err)
 	}
 

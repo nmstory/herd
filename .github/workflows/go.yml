@@ -14,19 +14,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: herd
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
-
     steps:
     - uses: actions/checkout@v4
 
@@ -36,6 +23,9 @@ jobs:
         go-version-file: 'go.mod'
         cache: true
 
+    - name: Start Postgres and Redpanda
+      run: docker compose up -d --wait
+
     - name: Build
       run: go build -v ./...
 
@@ -43,3 +33,4 @@ jobs:
       run: go test -race -v ./...
       env:
         HERD_TEST_DATABASE_URL: postgres://postgres:herd@localhost:5432/postgres
+        HERD_TEST_KAFKA_BROKERS: localhost:19092

@@ -19,9 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	HerdService_ListDevices_FullMethodName  = "/herd.v1.HerdService/ListDevices"
-	HerdService_AcquireLease_FullMethodName = "/herd.v1.HerdService/AcquireLease"
-	HerdService_ReleaseLease_FullMethodName = "/herd.v1.HerdService/ReleaseLease"
+	HerdService_ListDevices_FullMethodName   = "/herd.v1.HerdService/ListDevices"
+	HerdService_AcquireLease_FullMethodName  = "/herd.v1.HerdService/AcquireLease"
+	HerdService_ReleaseLease_FullMethodName  = "/herd.v1.HerdService/ReleaseLease"
+	HerdService_TopUp_FullMethodName         = "/herd.v1.HerdService/TopUp"
+	HerdService_GetWallet_FullMethodName     = "/herd.v1.HerdService/GetWallet"
+	HerdService_ListStatement_FullMethodName = "/herd.v1.HerdService/ListStatement"
 )
 
 // HerdServiceClient is the client API for HerdService service.
@@ -31,6 +34,10 @@ type HerdServiceClient interface {
 	ListDevices(ctx context.Context, in *ListDevicesRequest, opts ...grpc.CallOption) (*ListDevicesResponse, error)
 	AcquireLease(ctx context.Context, in *AcquireLeaseRequest, opts ...grpc.CallOption) (*AcquireLeaseResponse, error)
 	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
+	// Credits. Only available with the Postgres store.
+	TopUp(ctx context.Context, in *TopUpRequest, opts ...grpc.CallOption) (*Wallet, error)
+	GetWallet(ctx context.Context, in *GetWalletRequest, opts ...grpc.CallOption) (*Wallet, error)
+	ListStatement(ctx context.Context, in *ListStatementRequest, opts ...grpc.CallOption) (*ListStatementResponse, error)
 }
 
 type herdServiceClient struct {
@@ -71,6 +78,36 @@ func (c *herdServiceClient) ReleaseLease(ctx context.Context, in *ReleaseLeaseRe
 	return out, nil
 }
 
+func (c *herdServiceClient) TopUp(ctx context.Context, in *TopUpRequest, opts ...grpc.CallOption) (*Wallet, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Wallet)
+	err := c.cc.Invoke(ctx, HerdService_TopUp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *herdServiceClient) GetWallet(ctx context.Context, in *GetWalletRequest, opts ...grpc.CallOption) (*Wallet, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Wallet)
+	err := c.cc.Invoke(ctx, HerdService_GetWallet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *herdServiceClient) ListStatement(ctx context.Context, in *ListStatementRequest, opts ...grpc.CallOption) (*ListStatementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListStatementResponse)
+	err := c.cc.Invoke(ctx, HerdService_ListStatement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // HerdServiceServer is the server API for HerdService service.
 // All implementations must embed UnimplementedHerdServiceServer
 // for forward compatibility.
@@ -78,6 +115,10 @@ type HerdServiceServer interface {
 	ListDevices(context.Context, *ListDevicesRequest) (*ListDevicesResponse, error)
 	AcquireLease(context.Context, *AcquireLeaseRequest) (*AcquireLeaseResponse, error)
 	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
+	// Credits. Only available with the Postgres store.
+	TopUp(context.Context, *TopUpRequest) (*Wallet, error)
+	GetWallet(context.Context, *GetWalletRequest) (*Wallet, error)
+	ListStatement(context.Context, *ListStatementRequest) (*ListStatementResponse, error)
 	mustEmbedUnimplementedHerdServiceServer()
 }
 
@@ -96,6 +137,15 @@ func (UnimplementedHerdServiceServer) AcquireLease(context.Context, *AcquireLeas
 }
 func (UnimplementedHerdServiceServer) ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReleaseLease not implemented")
+}
+func (UnimplementedHerdServiceServer) TopUp(context.Context, *TopUpRequest) (*Wallet, error) {
+	return nil, status.Error(codes.Unimplemented, "method TopUp not implemented")
+}
+func (UnimplementedHerdServiceServer) GetWallet(context.Context, *GetWalletRequest) (*Wallet, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetWallet not implemented")
+}
+func (UnimplementedHerdServiceServer) ListStatement(context.Context, *ListStatementRequest) (*ListStatementResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListStatement not implemented")
 }
 func (UnimplementedHerdServiceServer) mustEmbedUnimplementedHerdServiceServer() {}
 func (UnimplementedHerdServiceServer) testEmbeddedByValue()                     {}
@@ -172,6 +222,60 @@ func _HerdService_ReleaseLease_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _HerdService_TopUp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TopUpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HerdServiceServer).TopUp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HerdService_TopUp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HerdServiceServer).TopUp(ctx, req.(*TopUpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HerdService_GetWallet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWalletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HerdServiceServer).GetWallet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HerdService_GetWallet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HerdServiceServer).GetWallet(ctx, req.(*GetWalletRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HerdService_ListStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListStatementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HerdServiceServer).ListStatement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HerdService_ListStatement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HerdServiceServer).ListStatement(ctx, req.(*ListStatementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // HerdService_ServiceDesc is the grpc.ServiceDesc for HerdService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +294,18 @@ var HerdService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReleaseLease",
 			Handler:    _HerdService_ReleaseLease_Handler,
+		},
+		{
+			MethodName: "TopUp",
+			Handler:    _HerdService_TopUp_Handler,
+		},
+		{
+			MethodName: "GetWallet",
+			Handler:    _HerdService_GetWallet_Handler,
+		},
+		{
+			MethodName: "ListStatement",
+			Handler:    _HerdService_ListStatement_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

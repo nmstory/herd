@@ -109,22 +109,24 @@ func (s *Store) Acquire(_ context.Context, p lease.AcquireParams) (lease.Lease, 
 	return lease.Lease{}, lease.ErrNoDeviceAvailable
 }
 
-func (s *Store) Release(_ context.Context, leaseID, holder string) error {
+// Release ends a lease. The in-memory store doesn't bill, so the settlement
+// is always zero.
+func (s *Store) Release(_ context.Context, leaseID, holder string) (lease.Settlement, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	r, ok := s.leases[leaseID]
 	if !ok {
-		return lease.ErrLeaseNotFound
+		return lease.Settlement{}, lease.ErrLeaseNotFound
 	}
 	if r.Holder != holder {
-		return lease.ErrNotHolder
+		return lease.Settlement{}, lease.ErrNotHolder
 	}
 	if now := s.now(); r.active(now) {
 		r.releasedAt = now
 	}
 
-	return nil
+	return lease.Settlement{}, nil
 }
 
 // newID returns a random UUIDv4, matching the IDs Postgres hands out.

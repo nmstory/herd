@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,7 +20,11 @@ import (
 const usage = `usage:
   herdctl [-addr host:port] list [-selector k=v,...]
   herdctl [-addr host:port] acquire [-selector k=v,...] [-duration 5m] [-holder name] [-key idempotency-key]
-  herdctl [-addr host:port] release [-holder name] <lease-id>`
+  herdctl [-addr host:port] release [-holder name] <lease-id>
+  herdctl [-addr host:port] wallet topup [-holder name] [-key idempotency-key] <amount>
+  herdctl [-addr host:port] wallet show [-holder name]
+  herdctl [-addr host:port] wallet statement [-holder name] [-n 50]
+  herdctl events [-brokers localhost:19092] [-from-start] tail`
 
 func main() {
 	addr := flag.String("addr", "localhost:9000", "herd address")
@@ -28,6 +33,11 @@ func main() {
 	if flag.NArg() == 0 {
 		flag.Usage()
 		os.Exit(2)
+	}
+
+	if flag.Arg(0) == "events" {
+		events(flag.Args()[1:]) // talks to Kafka, not herd
+		return
 	}
 
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials())) // no TLS for now
@@ -76,7 +86,11 @@ func main() {
 			log.Fatalf("AcquireLease failed: %v", err)
 		}
 		l := resp.Lease
-		fmt.Printf("lease %s on %s until %s (key %s)\n", l.Id, l.DeviceId, l.ExpiresAt.AsTime().Local().Format(time.TimeOnly), *key)
+		fmt.Printf("lease %s on %s until %s (key %s)", l.Id, l.DeviceId, l.ExpiresAt.AsTime().Local().Format(time.TimeOnly), *key)
+		if l.Held > 0 {
+			fmt.Printf("  ·  held %d credits (%d/min × %v)", l.Held, l.CreditsPerMinute, *duration)
+		}
+		fmt.Println()
 
 	case "release":
 		fs.Parse(args)
@@ -84,15 +98,88 @@ func main() {
 			flag.Usage()
 			os.Exit(2)
 		}
-		if _, err := client.ReleaseLease(ctx, &herdv1.ReleaseLeaseRequest{LeaseId: fs.Arg(0), Holder: *holder}); err != nil {
+		resp, err := client.ReleaseLease(ctx, &herdv1.ReleaseLeaseRequest{LeaseId: fs.Arg(0), Holder: *holder})
+		if err != nil {
 			log.Fatalf("ReleaseLease failed: %v", err)
 		}
-		fmt.Println("released", fs.Arg(0))
+		fmt.Print("released ", fs.Arg(0))
+		if resp.Charged > 0 || resp.Returned > 0 {
+			fmt.Printf("  ·  charged %d, returned %d", resp.Charged, resp.Returned)
+		}
+		fmt.Println()
+
+	case "wallet":
+		wallet(ctx, client, args)
 
 	default:
 		flag.Usage()
 		os.Exit(2)
 	}
+}
+
+func wallet(ctx context.Context, client herdv1.HerdServiceClient, args []string) {
+	if len(args) == 0 {
+		flag.Usage()
+		os.Exit(2)
+	}
+
+	fs := flag.NewFlagSet("wallet "+args[0], flag.ExitOnError)
+	holder := fs.String("holder", os.Getenv("USER"), "wallet holder")
+
+	switch args[0] {
+	case "topup":
+		key := fs.String("key", "", "idempotency key; reuse it to retry safely (default: random)")
+		fs.Parse(args[1:])
+		amount, err := strconv.ParseInt(fs.Arg(0), 10, 64)
+		if fs.NArg() != 1 || err != nil {
+			flag.Usage()
+			os.Exit(2)
+		}
+		if *key == "" {
+			*key = rand.Text()
+		}
+		w, err := client.TopUp(ctx, &herdv1.TopUpRequest{Holder: *holder, Amount: amount, IdempotencyKey: *key})
+		if err != nil {
+			log.Fatalf("TopUp failed: %v", err)
+		}
+		printWallet(w)
+
+	case "show":
+		fs.Parse(args[1:])
+		w, err := client.GetWallet(ctx, &herdv1.GetWalletRequest{Holder: *holder})
+		if err != nil {
+			log.Fatalf("GetWallet failed: %v", err)
+		}
+		printWallet(w)
+
+	case "statement":
+		n := fs.Int("n", 50, "number of most recent entries")
+		fs.Parse(args[1:])
+		resp, err := client.ListStatement(ctx, &herdv1.ListStatementRequest{Holder: *holder, Limit: int32(*n)})
+		if err != nil {
+			log.Fatalf("ListStatement failed: %v", err)
+		}
+		for _, l := range resp.Lines {
+			lease := ""
+			if l.LeaseId != "" {
+				lease = "lease " + l.LeaseId[:8]
+			}
+			charged := ""
+			if l.Charged != 0 {
+				charged = fmt.Sprintf("charged %d", l.Charged)
+			}
+			fmt.Printf("%s  %-8s %-14s %+6d  %-12s balance %d\n",
+				l.At.AsTime().Local().Format(time.TimeOnly), l.Kind, lease, l.Amount, charged, l.Balance)
+		}
+
+	default:
+		flag.Usage()
+		os.Exit(2)
+	}
+}
+
+func printWallet(w *herdv1.Wallet) {
+	fmt.Printf("wallet %s: %d credits available, %d held\n", w.Holder, w.Available, w.Held)
 }
 
 func parseSelector(s string) map[string]string {

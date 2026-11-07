@@ -13,6 +13,10 @@ type DeviceConfig struct {
 
 type Config struct {
 	DeviceConfigs []DeviceConfig `yaml:"devices"`
+
+	// Credits per minute of device time, keyed by the model label. "default"
+	// prices any model not listed.
+	Prices map[string]int64 `yaml:"prices"`
 }
 
 func Load(path string) (*Config, error) {
