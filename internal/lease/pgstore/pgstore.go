@@ -25,6 +25,7 @@ import (
 
 	"github.com/nmstory/herd/internal/config"
 	"github.com/nmstory/herd/internal/lease"
+	"github.com/nmstory/herd/internal/ledger"
 )
 
 // LockMode picks how Acquire locks its candidate device. Only SkipLocked is
@@ -42,6 +43,9 @@ const maxAttempts = 100
 type Store struct {
 	pool *pgxpool.Pool
 	Lock LockMode
+
+	// Billing charges leases to the holder's wallet. See billing.go.
+	Billing bool
 
 	// Conflicts counts unique violations that forced Acquire to retry.
 	Conflicts atomic.Int64
@@ -99,8 +103,8 @@ func (s *Store) Acquire(ctx context.Context, p lease.AcquireParams) (lease.Lease
 
 	for range maxAttempts {
 		l, err := s.tryAcquire(ctx, p)
-		if isUniqueViolation(err) {
-			// Either a concurrent claimer took this device, or a concurrent
+		if isRetryable(err) {
+			// Usually a concurrent claimer took this device, or a concurrent
 			// retry of this same request committed first. Both resolve on the
 			// next attempt.
 			s.Conflicts.Add(1)
@@ -123,10 +127,10 @@ func (s *Store) tryAcquire(ctx context.Context, p lease.AcquireParams) (lease.Le
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var storedHash []byte
 		err := tx.QueryRow(ctx, `
-			SELECT id, device_id, holder, expires_at, request_hash
+			SELECT id, device_id, holder, expires_at, credits_per_minute, held, request_hash
 			FROM leases WHERE holder = $1 AND idempotency_key = $2`,
 			p.Holder, p.IdempotencyKey,
-		).Scan(&l.ID, &l.DeviceID, &l.Holder, &l.ExpiresAt, &storedHash)
+		).Scan(&l.ID, &l.DeviceID, &l.Holder, &l.ExpiresAt, &l.CreditsPerMinute, &l.Held, &storedHash)
 		switch {
 		case err == nil:
 			if !bytes.Equal(storedHash, hash) {
@@ -137,16 +141,26 @@ func (s *Store) tryAcquire(ctx context.Context, p lease.AcquireParams) (lease.Le
 			return err
 		}
 
-		var deviceID string
+		// Queue on the wallet before taking a device. Otherwise claimers
+		// sharing a wallet each lock a device and then wait for the wallet,
+		// and SKIP LOCKED makes newcomers see every device as taken.
+		if s.Billing {
+			if _, err := tx.Exec(ctx, `SELECT FROM account_balances WHERE account = $1 FOR UPDATE`,
+				ledger.WalletAccount(p.Holder)); err != nil {
+				return err
+			}
+		}
+
+		var deviceID, model string
 		err = tx.QueryRow(ctx, `
-			SELECT d.id FROM devices d
+			SELECT d.id, COALESCE(d.labels->>'model', '') FROM devices d
 			WHERE d.labels @> $1::jsonb
 			  AND NOT EXISTS (
 				SELECT 1 FROM leases l
 				WHERE l.device_id = d.id AND l.released_at IS NULL AND l.expires_at > now()
 			  )
 			ORDER BY d.id
-			LIMIT 1 `+s.lockClause(), string(sel)).Scan(&deviceID)
+			LIMIT 1 `+s.lockClause(), string(sel)).Scan(&deviceID, &model)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return lease.ErrNoDeviceAvailable
 		}
@@ -156,19 +170,43 @@ func (s *Store) tryAcquire(ctx context.Context, p lease.AcquireParams) (lease.Le
 
 		// Close out any expired lease so the partial unique index lets a new
 		// one in.
-		if _, err := tx.Exec(ctx, `
+		rows, err := tx.Query(ctx, `
 			UPDATE leases SET released_at = expires_at
-			WHERE device_id = $1 AND released_at IS NULL AND expires_at <= now()`, deviceID); err != nil {
+			WHERE device_id = $1 AND released_at IS NULL AND expires_at <= now()
+			RETURNING id::text`, deviceID)
+		if err != nil {
 			return err
+		}
+		expired, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if s.Billing {
+			for _, id := range expired {
+				if _, err := settle(ctx, tx, id); err != nil {
+					return err
+				}
+			}
 		}
 
 		l.DeviceID, l.Holder = deviceID, p.Holder
-		return tx.QueryRow(ctx, `
-			INSERT INTO leases (device_id, holder, idempotency_key, request_hash, expires_at)
-			VALUES ($1, $2, $3, $4, now() + $5 * interval '1 microsecond')
+		if s.Billing {
+			if l.CreditsPerMinute, err = priceFor(ctx, tx, model); err != nil {
+				return err
+			}
+			l.Held = l.CreditsPerMinute * minutes(p.Duration)
+		}
+
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO leases (device_id, holder, idempotency_key, request_hash, expires_at, credits_per_minute, held)
+			VALUES ($1, $2, $3, $4, now() + $5 * interval '1 microsecond', $6, $7)
 			RETURNING id, expires_at`,
-			deviceID, p.Holder, p.IdempotencyKey, hash, p.Duration.Microseconds(),
-		).Scan(&l.ID, &l.ExpiresAt)
+			deviceID, p.Holder, p.IdempotencyKey, hash, p.Duration.Microseconds(), l.CreditsPerMinute, l.Held,
+		).Scan(&l.ID, &l.ExpiresAt); err != nil {
+			return err
+		}
+
+		return hold(ctx, tx, l)
 	})
 	if err != nil {
 		return lease.Lease{}, err
@@ -188,21 +226,16 @@ func (s *Store) lockClause() string {
 	}
 }
 
-func (s *Store) Release(ctx context.Context, leaseID, holder string) error {
+func (s *Store) Release(ctx context.Context, leaseID, holder string) (lease.Settlement, error) {
 	var id pgtype.UUID
 	if err := id.Scan(leaseID); err != nil {
-		return lease.ErrLeaseNotFound
+		return lease.Settlement{}, lease.ErrLeaseNotFound
 	}
 
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var (
-			storedHolder string
-			active       bool
-		)
-		err := tx.QueryRow(ctx, `
-			SELECT holder, released_at IS NULL AND expires_at > now()
-			FROM leases WHERE id = $1 FOR UPDATE`, id,
-		).Scan(&storedHolder, &active)
+	var settled lease.Settlement
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var storedHolder string
+		err := tx.QueryRow(ctx, `SELECT holder FROM leases WHERE id = $1 FOR UPDATE`, id).Scan(&storedHolder)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			return lease.ErrLeaseNotFound
@@ -210,18 +243,30 @@ func (s *Store) Release(ctx context.Context, leaseID, holder string) error {
 			return err
 		case storedHolder != holder:
 			return lease.ErrNotHolder
-		case !active:
-			return nil
 		}
 
-		_, err = tx.Exec(ctx, `UPDATE leases SET released_at = now() WHERE id = $1`, id)
+		// A lease that has already expired ends at its expiry, not now.
+		if _, err := tx.Exec(ctx, `
+			UPDATE leases SET released_at = least(now(), expires_at)
+			WHERE id = $1 AND released_at IS NULL`, id); err != nil {
+			return err
+		}
+
+		if s.Billing {
+			settled, err = settle(ctx, tx, leaseID)
+		}
 		return err
 	})
+
+	return settled, err
 }
 
-func isUniqueViolation(err error) bool {
+// isRetryable reports errors that a fresh attempt can resolve: a unique
+// violation (see the package comment) or a deadlock, which Postgres resolves
+// by aborting one of the transactions.
+func isRetryable(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	return errors.As(err, &pgErr) && (pgErr.Code == "23505" || pgErr.Code == "40P01")
 }
 
 func nonNil(m map[string]string) map[string]string {

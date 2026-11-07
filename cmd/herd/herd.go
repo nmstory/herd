@@ -60,19 +60,22 @@ func (s *HerdServiceServer) AcquireLease(ctx context.Context, req *herdv1.Acquir
 	}
 
 	return &herdv1.AcquireLeaseResponse{Lease: &herdv1.Lease{
-		Id:        l.ID,
-		DeviceId:  l.DeviceID,
-		ExpiresAt: timestamppb.New(l.ExpiresAt),
-		Holder:    l.Holder,
+		Id:               l.ID,
+		DeviceId:         l.DeviceID,
+		ExpiresAt:        timestamppb.New(l.ExpiresAt),
+		Holder:           l.Holder,
+		CreditsPerMinute: l.CreditsPerMinute,
+		Held:             l.Held,
 	}}, nil
 }
 
 func (s *HerdServiceServer) ReleaseLease(ctx context.Context, req *herdv1.ReleaseLeaseRequest) (*herdv1.ReleaseLeaseResponse, error) {
-	if err := s.store.Release(ctx, req.GetLeaseId(), req.GetHolder()); err != nil {
+	settled, err := s.store.Release(ctx, req.GetLeaseId(), req.GetHolder())
+	if err != nil {
 		return nil, toStatus(err)
 	}
 
-	return &herdv1.ReleaseLeaseResponse{}, nil
+	return &herdv1.ReleaseLeaseResponse{Charged: settled.Charged, Returned: settled.Returned}, nil
 }
 
 func (s *HerdServiceServer) TopUp(ctx context.Context, req *herdv1.TopUpRequest) (*herdv1.Wallet, error) {
@@ -147,7 +150,7 @@ func toStatus(err error) error {
 	case errors.Is(err, lease.ErrNotHolder):
 		code = codes.PermissionDenied
 	case errors.Is(err, lease.ErrIdempotencyMismatch), errors.Is(err, ledger.ErrIdempotencyMismatch),
-		errors.Is(err, ledger.ErrInsufficientFunds):
+		errors.Is(err, lease.ErrInsufficientCredits), errors.Is(err, ledger.ErrInsufficientFunds):
 		code = codes.FailedPrecondition
 	}
 
@@ -169,7 +172,12 @@ func openStore(ctx context.Context, kind, databaseURL string, cfg *config.Config
 		if err := pgstore.SyncDevices(ctx, pool, cfg.DeviceConfigs); err != nil {
 			return nil, nil, err
 		}
-		return pgstore.New(pool), ledger.NewBook(pool), nil
+		if err := pgstore.SyncPrices(ctx, pool, cfg.Prices); err != nil {
+			return nil, nil, err
+		}
+		store := pgstore.New(pool)
+		store.Billing = true
+		return store, ledger.NewBook(pool), nil
 	default:
 		return nil, nil, errors.New("unknown store " + kind)
 	}

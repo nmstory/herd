@@ -80,7 +80,11 @@ func main() {
 			log.Fatalf("AcquireLease failed: %v", err)
 		}
 		l := resp.Lease
-		fmt.Printf("lease %s on %s until %s (key %s)\n", l.Id, l.DeviceId, l.ExpiresAt.AsTime().Local().Format(time.TimeOnly), *key)
+		fmt.Printf("lease %s on %s until %s (key %s)", l.Id, l.DeviceId, l.ExpiresAt.AsTime().Local().Format(time.TimeOnly), *key)
+		if l.Held > 0 {
+			fmt.Printf("  ·  held %d credits (%d/min × %v)", l.Held, l.CreditsPerMinute, *duration)
+		}
+		fmt.Println()
 
 	case "release":
 		fs.Parse(args)
@@ -88,10 +92,15 @@ func main() {
 			flag.Usage()
 			os.Exit(2)
 		}
-		if _, err := client.ReleaseLease(ctx, &herdv1.ReleaseLeaseRequest{LeaseId: fs.Arg(0), Holder: *holder}); err != nil {
+		resp, err := client.ReleaseLease(ctx, &herdv1.ReleaseLeaseRequest{LeaseId: fs.Arg(0), Holder: *holder})
+		if err != nil {
 			log.Fatalf("ReleaseLease failed: %v", err)
 		}
-		fmt.Println("released", fs.Arg(0))
+		fmt.Print("released ", fs.Arg(0))
+		if resp.Charged > 0 || resp.Returned > 0 {
+			fmt.Printf("  ·  charged %d, returned %d", resp.Charged, resp.Returned)
+		}
+		fmt.Println()
 
 	case "wallet":
 		wallet(ctx, client, args)

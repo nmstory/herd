@@ -53,6 +53,8 @@ message Lease {
     string device_id = 2;
     google.protobuf.Timestamp expires_at = 3;
     string holder = 4;
+    int64 credits_per_minute = 5;  // price snapshotted at acquire; 0 if unbilled
+    int64 held = 6;                // credits reserved until the lease settles
 }
 
 message AcquireLeaseResponse {
@@ -64,7 +66,10 @@ message ReleaseLeaseRequest {
     string holder = 2;
 }
 
-message ReleaseLeaseResponse {}
+message ReleaseLeaseResponse {
+    int64 charged = 1;   // credits charged for the time used
+    int64 returned = 2;  // rest of the hold, back to the wallet
+}
 message Wallet {
     string holder = 1;
     int64 available = 2;  // spendable credits

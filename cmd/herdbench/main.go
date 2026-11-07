@@ -162,7 +162,7 @@ func latency(ctx context.Context, s lease.Store, n int) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := s.Release(ctx, l.ID, "bench"); err != nil {
+		if _, err := s.Release(ctx, l.ID, "bench"); err != nil {
 			log.Fatal(err)
 		}
 	}

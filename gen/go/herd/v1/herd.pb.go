@@ -303,13 +303,15 @@ func (x *AcquireLeaseRequest) GetIdempotencyKey() string {
 }
 
 type Lease struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	Holder        string                 `protobuf:"bytes,4,opt,name=holder,proto3" json:"holder,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	DeviceId         string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	ExpiresAt        *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Holder           string                 `protobuf:"bytes,4,opt,name=holder,proto3" json:"holder,omitempty"`
+	CreditsPerMinute int64                  `protobuf:"varint,5,opt,name=credits_per_minute,json=creditsPerMinute,proto3" json:"credits_per_minute,omitempty"` // price snapshotted at acquire; 0 if unbilled
+	Held             int64                  `protobuf:"varint,6,opt,name=held,proto3" json:"held,omitempty"`                                                   // credits reserved until the lease settles
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Lease) Reset() {
@@ -368,6 +370,20 @@ func (x *Lease) GetHolder() string {
 		return x.Holder
 	}
 	return ""
+}
+
+func (x *Lease) GetCreditsPerMinute() int64 {
+	if x != nil {
+		return x.CreditsPerMinute
+	}
+	return 0
+}
+
+func (x *Lease) GetHeld() int64 {
+	if x != nil {
+		return x.Held
+	}
+	return 0
 }
 
 type AcquireLeaseResponse struct {
@@ -468,6 +484,8 @@ func (x *ReleaseLeaseRequest) GetHolder() string {
 
 type ReleaseLeaseResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Charged       int64                  `protobuf:"varint,1,opt,name=charged,proto3" json:"charged,omitempty"`   // credits charged for the time used
+	Returned      int64                  `protobuf:"varint,2,opt,name=returned,proto3" json:"returned,omitempty"` // rest of the hold, back to the wallet
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -500,6 +518,20 @@ func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ReleaseLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
 	return file_herd_v1_herd_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ReleaseLeaseResponse) GetCharged() int64 {
+	if x != nil {
+		return x.Charged
+	}
+	return 0
+}
+
+func (x *ReleaseLeaseResponse) GetReturned() int64 {
+	if x != nil {
+		return x.Returned
+	}
+	return 0
 }
 
 type Wallet struct {
@@ -881,19 +913,23 @@ const file_herd_v1_herd_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x1a;\n" +
 	"\rSelectorEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x87\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc9\x01\n" +
 	"\x05Lease\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x129\n" +
 	"\n" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x16\n" +
-	"\x06holder\x18\x04 \x01(\tR\x06holder\"<\n" +
+	"\x06holder\x18\x04 \x01(\tR\x06holder\x12,\n" +
+	"\x12credits_per_minute\x18\x05 \x01(\x03R\x10creditsPerMinute\x12\x12\n" +
+	"\x04held\x18\x06 \x01(\x03R\x04held\"<\n" +
 	"\x14AcquireLeaseResponse\x12$\n" +
 	"\x05lease\x18\x01 \x01(\v2\x0e.herd.v1.LeaseR\x05lease\"H\n" +
 	"\x13ReleaseLeaseRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x16\n" +
-	"\x06holder\x18\x02 \x01(\tR\x06holder\"\x16\n" +
-	"\x14ReleaseLeaseResponse\"R\n" +
+	"\x06holder\x18\x02 \x01(\tR\x06holder\"L\n" +
+	"\x14ReleaseLeaseResponse\x12\x18\n" +
+	"\acharged\x18\x01 \x01(\x03R\acharged\x12\x1a\n" +
+	"\breturned\x18\x02 \x01(\x03R\breturned\"R\n" +
 	"\x06Wallet\x12\x16\n" +
 	"\x06holder\x18\x01 \x01(\tR\x06holder\x12\x1c\n" +
 	"\tavailable\x18\x02 \x01(\x03R\tavailable\x12\x12\n" +

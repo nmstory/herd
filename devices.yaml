@@ -1,3 +1,15 @@
+# Credits per minute of device time, by model label. "default" covers the rest.
+prices:
+  default: 1
+  rpi4: 1
+  rpi5: 2
+  orangepi-5: 1
+  jetson-nano: 3
+  jetson-orin: 5
+  x86-vm: 2
+  mac-mini-m1: 4
+  mac-mini-m2: 5
+
 devices:
   - id: dev-001
     labels:
