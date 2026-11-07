@@ -7,7 +7,8 @@
 //	herdbench -store postgres -mode contention -lock wait
 //	herdbench -store postgres -mode contention -lock none -drop-unique-index
 //
-// Postgres runs use a throwaway schema that is dropped afterwards.
+// The credits and Kafka experiments are in credits.go. Postgres runs use a
+// throwaway schema that is dropped afterwards.
 package main
 
 import (
@@ -36,15 +37,37 @@ func main() {
 	var (
 		storeKind   = flag.String("store", "memory", "memory or postgres")
 		databaseURL = flag.String("database-url", os.Getenv("DATABASE_URL"), "Postgres URL")
-		mode        = flag.String("mode", "latency", "latency or contention")
+		mode        = flag.String("mode", "latency", "latency, contention, wallet, events or lag")
 		lockMode    = flag.String("lock", "skip", "postgres row locking: skip, wait or none")
 		dropIndex   = flag.Bool("drop-unique-index", false, "drop the one-active-lease index to show what it prevents")
 		devices     = flag.Int("devices", 20, "devices in the pool")
 		claimers    = flag.Int("claimers", 100, "concurrent claimers (contention mode)")
-		iterations  = flag.Int("n", 2000, "acquire/release cycles (latency mode)")
+		iterations  = flag.Int("n", 2000, "acquire/release cycles (latency mode); operations ×3 (events mode)")
+
+		brokers      = flag.String("brokers", "localhost:19092", "Kafka brokers (events and lag modes)")
+		noWalletLock = flag.Bool("no-wallet-lock", false, "don't lock the wallet before picking a device (wallet mode)")
+		dualWrite    = flag.Bool("dual-write", false, "publish to Kafka inside the transaction instead of the outbox (events mode)")
+		crashRate    = flag.Float64("crash-rate", 0.05, "fraction of transactions that die after writing their event (events mode)")
+		duration     = flag.Duration("duration", 10*time.Second, "how long to generate load (lag mode)")
 	)
 	flag.Parse()
 	ctx := context.Background()
+
+	cf := creditsFlags{
+		databaseURL: *databaseURL, brokers: *brokers, devices: *devices, claimers: *claimers, n: *iterations,
+		noWalletLock: *noWalletLock, dualWrite: *dualWrite, crashRate: *crashRate, duration: *duration,
+	}
+	switch *mode {
+	case "wallet":
+		walletDrain(ctx, cf)
+		return
+	case "events":
+		events(ctx, cf)
+		return
+	case "lag":
+		lag(ctx, cf)
+		return
+	}
 
 	store, conflicts, cleanup, err := openStore(ctx, *storeKind, *databaseURL, *lockMode, *dropIndex, makeDevices(*devices))
 	if err != nil {
@@ -73,31 +96,29 @@ func makeDevices(n int) []config.DeviceConfig {
 	return out
 }
 
-func openStore(ctx context.Context, kind, url, lock string, dropIndex bool, devices []config.DeviceConfig) (lease.Store, func() int64, func(), error) {
-	if kind == "memory" {
-		return memstore.New(registry.New(&config.Config{DeviceConfigs: devices})), nil, func() {}, nil
-	}
-
+// openPostgres creates a throwaway schema, migrates it and loads the
+// devices. cleanup drops the schema.
+func openPostgres(ctx context.Context, url string, devices []config.DeviceConfig) (pool *pgxpool.Pool, cleanup func(), err error) {
 	admin, err := pgxpool.New(ctx, url)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	schema := "herdbench_" + rand.Text()[:12]
 	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = schema
 	cfg.MaxConns = 64
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	pool, err = pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	cleanup := func() {
+	cleanup = func() {
 		pool.Close()
 		admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
 		admin.Close()
@@ -105,11 +126,11 @@ func openStore(ctx context.Context, kind, url, lock string, dropIndex bool, devi
 
 	if err := db.Migrate(ctx, pool); err != nil {
 		cleanup()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if err := pgstore.SyncDevices(ctx, pool, devices); err != nil {
 		cleanup()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	// Open every connection up front so timings measure locking, not
 	// connection setup.
@@ -118,12 +139,25 @@ func openStore(ctx context.Context, kind, url, lock string, dropIndex bool, devi
 		c, err := pool.Acquire(ctx)
 		if err != nil {
 			cleanup()
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		conns = append(conns, c)
 	}
 	for _, c := range conns {
 		c.Release()
+	}
+
+	return pool, cleanup, nil
+}
+
+func openStore(ctx context.Context, kind, url, lock string, dropIndex bool, devices []config.DeviceConfig) (lease.Store, func() int64, func(), error) {
+	if kind == "memory" {
+		return memstore.New(registry.New(&config.Config{DeviceConfigs: devices})), nil, func() {}, nil
+	}
+
+	pool, cleanup, err := openPostgres(ctx, url, devices)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	if dropIndex {

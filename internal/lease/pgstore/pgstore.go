@@ -49,6 +49,10 @@ type Store struct {
 	// Billing charges leases to the holder's wallet. See billing.go.
 	Billing bool
 
+	// SkipWalletLock turns off locking the wallet before picking a device.
+	// Only for measuring what that lock prevents.
+	SkipWalletLock bool
+
 	// Events receives an event for every lease change and journal entry,
 	// inside the transaction that makes it. nil disables events.
 	Events outbox.Writer
@@ -150,7 +154,7 @@ func (s *Store) tryAcquire(ctx context.Context, p lease.AcquireParams) (lease.Le
 		// Queue on the wallet before taking a device. Otherwise claimers
 		// sharing a wallet each lock a device and then wait for the wallet,
 		// and SKIP LOCKED makes newcomers see every device as taken.
-		if s.Billing {
+		if s.Billing && !s.SkipWalletLock {
 			if _, err := tx.Exec(ctx, `SELECT FROM account_balances WHERE account = $1 FOR UPDATE`,
 				ledger.WalletAccount(p.Holder)); err != nil {
 				return err

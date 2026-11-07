@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -40,4 +41,21 @@ func (t Table) Write(ctx context.Context, tx pgx.Tx, topic, key string, msg prot
 	_, err = tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload) VALUES ($1, $2, $3)`, t.TopicPrefix+topic, key, payload)
 
 	return err
+}
+
+// Direct publishes straight to Kafka from inside the transaction: the dual
+// write the outbox exists to avoid. If the transaction then rolls back, the
+// event is already out. It's here only so herdbench can show that happening.
+type Direct struct {
+	Client      *kgo.Client
+	TopicPrefix string
+}
+
+func (d Direct) Write(ctx context.Context, _ pgx.Tx, topic, key string, msg proto.Message) error {
+	payload, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	return d.Client.ProduceSync(ctx, &kgo.Record{Topic: d.TopicPrefix + topic, Key: []byte(key), Value: payload}).FirstErr()
 }
