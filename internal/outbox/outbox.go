@@ -26,14 +26,18 @@ type Writer interface {
 
 // Table is the standard Writer: it inserts into the outbox table, so the
 // event commits or rolls back with everything else in tx.
-type Table struct{}
+type Table struct {
+	// TopicPrefix is prepended to every topic, so tests sharing a broker can
+	// keep their events apart.
+	TopicPrefix string
+}
 
-func (Table) Write(ctx context.Context, tx pgx.Tx, topic, key string, msg proto.Message) error {
+func (t Table) Write(ctx context.Context, tx pgx.Tx, topic, key string, msg proto.Message) error {
 	payload, err := proto.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload) VALUES ($1, $2, $3)`, topic, key, payload)
+	_, err = tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload) VALUES ($1, $2, $3)`, t.TopicPrefix+topic, key, payload)
 
 	return err
 }
