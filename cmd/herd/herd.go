@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
@@ -189,6 +190,7 @@ func main() {
 		configPath  = flag.String("config", "devices.yaml", "device config file")
 		storeKind   = flag.String("store", "memory", "lease store: memory or postgres")
 		databaseURL = flag.String("database-url", os.Getenv("DATABASE_URL"), "Postgres URL (with -store=postgres)")
+		settleEvery = flag.Duration("settle-interval", 5*time.Second, "how often to charge expired leases (with -store=postgres)")
 	)
 	flag.Parse()
 
@@ -200,6 +202,10 @@ func main() {
 	store, book, err := openStore(context.Background(), *storeKind, *databaseURL, cfg)
 	if err != nil {
 		log.Fatalf("failed to open %s store: %v", *storeKind, err)
+	}
+
+	if pg, ok := store.(*pgstore.Store); ok {
+		go pg.RunSettler(context.Background(), *settleEvery)
 	}
 
 	lis, err := net.Listen("tcp", *addr)

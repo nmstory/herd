@@ -3,6 +3,7 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -132,4 +133,65 @@ func previousSettlement(ctx context.Context, tx pgx.Tx, leaseID string) (lease.S
 		WHERE e.idempotency_key = $1`, "settle:"+leaseID, ledger.Revenue).Scan(&s.Charged, &s.Returned)
 
 	return s, err
+}
+
+// SettleExpired settles up to limit leases whose time ran out while they
+// still held credits, and reports how many it settled. SKIP LOCKED turns the
+// leases table into a job queue: replicas running this at the same time take
+// disjoint batches, and a lease being released right now is left alone.
+func (s *Store) SettleExpired(ctx context.Context, limit int) (int, error) {
+	var n int
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT l.id::text FROM leases l
+			JOIN account_balances b ON b.account = 'hold:' || l.id
+			WHERE l.expires_at <= now() AND b.balance > 0
+			ORDER BY l.expires_at
+			LIMIT $1
+			FOR UPDATE OF l SKIP LOCKED`, limit)
+		if err != nil {
+			return err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+
+		for _, id := range ids {
+			if _, err := tx.Exec(ctx, `UPDATE leases SET released_at = expires_at WHERE id = $1 AND released_at IS NULL`, id); err != nil {
+				return err
+			}
+			if _, err := settle(ctx, tx, id); err != nil {
+				return err
+			}
+		}
+		n = len(ids)
+		return nil
+	})
+
+	return n, err
+}
+
+// RunSettler settles expired leases every interval until ctx is cancelled.
+func (s *Store) RunSettler(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+
+		for {
+			n, err := s.SettleExpired(ctx, 50)
+			if err != nil && ctx.Err() == nil {
+				log.Printf("settler: %v", err)
+			}
+			if n < 50 {
+				break // caught up
+			}
+		}
+	}
 }

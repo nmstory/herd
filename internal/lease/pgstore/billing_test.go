@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nmstory/herd/internal/config"
+	"github.com/nmstory/herd/internal/db/dbtest"
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/ledger"
 )
@@ -200,4 +201,70 @@ func TestUnpricedModelIsFree(t *testing.T) {
 	if settled, err := s.Release(ctx, l.ID, "alice"); err != nil || settled != (lease.Settlement{}) {
 		t.Errorf("release: %+v, %v, want an empty settlement", settled, err)
 	}
+}
+
+// Two replicas settling the same backlog at once must settle every lease
+// exactly once.
+func TestConcurrentSettlersSettleEachLeaseOnce(t *testing.T) {
+	const leases = 30
+	ctx := context.Background()
+	schema, pool := setup(t, models(leases, "rpi4"))
+	if err := SyncPrices(ctx, pool, map[string]int64{"rpi4": 1}); err != nil {
+		t.Fatal(err)
+	}
+	book := ledger.NewBook(pool)
+	if _, err := book.TopUp(ctx, "alice", 100, "t1"); err != nil {
+		t.Fatal(err)
+	}
+
+	replicas := []*Store{New(pool), New(dbtest.OpenPool(t, schema))}
+	for _, r := range replicas {
+		r.Billing = true
+	}
+	// Long enough that no lease expires while the rest are being taken;
+	// otherwise later acquires reclaim (and settle) the expired devices.
+	const duration = time.Second
+	for i := range leases {
+		if _, err := replicas[0].Acquire(ctx, lease.AcquireParams{
+			Holder: "alice", IdempotencyKey: fmt.Sprint(i), Duration: duration,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(duration + 200*time.Millisecond)
+
+	var wg sync.WaitGroup
+	var settled [2]int
+	for i, r := range replicas {
+		wg.Go(func() {
+			for {
+				n, err := r.SettleExpired(ctx, 5)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if n == 0 {
+					return
+				}
+				settled[i] += n
+			}
+		})
+	}
+	wg.Wait()
+
+	if settled[0]+settled[1] != leases {
+		t.Errorf("settlers settled %d and %d leases, want %d in total", settled[0], settled[1], leases)
+	}
+	var entries int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM journal_entries WHERE kind = 'expire'`).Scan(&entries); err != nil {
+		t.Fatal(err)
+	}
+	if entries != leases {
+		t.Errorf("%d expire entries, want %d", entries, leases)
+	}
+	// Each lease held 1 credit and was charged it in full.
+	if w := wallet(t, book, "alice"); w.Available != 100-leases || w.Held != 0 {
+		t.Errorf("wallet %+v, want %d available, 0 held", w, 100-leases)
+	}
+	t.Logf("replica 0 settled %d, replica 1 settled %d", settled[0], settled[1])
 }
