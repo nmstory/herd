@@ -200,9 +200,14 @@ func lag(ctx context.Context, f creditsFlags) {
 	defer cleanup()
 	client := kafkaClient(f.brokers)
 	defer client.Close()
-	if err := outbox.EnsureTopics(ctx, client, 3); err != nil {
+
+	// Own topics, never herd's: a throwaway schema's entry ids would collide
+	// with a real deployment's.
+	prefix := "bench-" + strings.ToLower(crand.Text()[:8]) + "."
+	if _, err := kadm.NewClient(client).CreateTopics(ctx, 3, -1, nil, prefix+outbox.LeaseTopic, prefix+outbox.LedgerTopic); err != nil {
 		log.Fatal(err)
 	}
+	s.Events = outbox.Table{TopicPrefix: prefix}
 	book := ledger.NewBook(pool, s.Events)
 
 	relayCtx, stop := context.WithCancel(ctx)

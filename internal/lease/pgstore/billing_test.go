@@ -214,7 +214,7 @@ func TestConcurrentSettlersSettleEachLeaseOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	book := ledger.NewBook(pool, outbox.Table{})
-	if _, err := book.TopUp(ctx, "alice", 100, "t1"); err != nil {
+	if _, err := book.TopUp(ctx, "alice", 60*leases, "t1"); err != nil { // an hour's hold each
 		t.Fatal(err)
 	}
 
@@ -222,17 +222,19 @@ func TestConcurrentSettlersSettleEachLeaseOnce(t *testing.T) {
 	for _, r := range replicas {
 		r.Billing = true
 	}
-	// Long enough that no lease expires while the rest are being taken;
-	// otherwise later acquires reclaim (and settle) the expired devices.
-	const duration = time.Second
 	for i := range leases {
 		if _, err := replicas[0].Acquire(ctx, lease.AcquireParams{
-			Holder: "alice", IdempotencyKey: fmt.Sprint(i), Duration: duration,
+			Holder: "alice", IdempotencyKey: fmt.Sprint(i), Duration: time.Hour,
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(duration + 200*time.Millisecond)
+	// Expire them all at once. Waiting for short leases to run out is racy:
+	// under load, early leases expire while later ones are still being taken,
+	// and those acquires reclaim (and settle) the expired devices themselves.
+	if _, err := pool.Exec(ctx, `UPDATE leases SET acquired_at = acquired_at - interval '1 hour', expires_at = acquired_at - interval '59 minutes'`); err != nil {
+		t.Fatal(err)
+	}
 
 	var wg sync.WaitGroup
 	var settled [2]int
@@ -263,9 +265,9 @@ func TestConcurrentSettlersSettleEachLeaseOnce(t *testing.T) {
 	if entries != leases {
 		t.Errorf("%d expire entries, want %d", entries, leases)
 	}
-	// Each lease held 1 credit and was charged it in full.
-	if w := wallet(t, book, "alice"); w.Available != 100-leases || w.Held != 0 {
-		t.Errorf("wallet %+v, want %d available, 0 held", w, 100-leases)
+	// Each lease held 60 credits and ran for its one (backdated) minute.
+	if w := wallet(t, book, "alice"); w.Available != 59*leases || w.Held != 0 {
+		t.Errorf("wallet %+v, want %d available, 0 held", w, 59*leases)
 	}
 	t.Logf("replica 0 settled %d, replica 1 settled %d", settled[0], settled[1])
 }

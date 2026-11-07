@@ -200,3 +200,27 @@ func TestUnrelayedEntriesAreLagNotLoss(t *testing.T) {
 		t.Errorf("want OK with 5 missing, all still in the outbox; got %+v", r)
 	}
 }
+
+// Two entries with the same id but different contents can't both be real:
+// typically a second database is writing to the same topic.
+func TestConflictingDuplicateIsCaught(t *testing.T) {
+	w := newWorld(t)
+	w.trade(t)
+	w.relay(t)
+
+	impostor, err := proto.Marshal(&eventsv1.LedgerEntry{
+		EntryId: 1, Kind: "topup", Holder: "alice",
+		Postings: []*eventsv1.Posting{{Account: "external", Amount: -1}, {Account: "wallet:alice", Amount: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.client.ProduceSync(context.Background(), &kgo.Record{Topic: w.topic, Key: []byte("alice"), Value: impostor}).FirstErr(); err != nil {
+		t.Fatal(err)
+	}
+
+	r := w.reconcile(t)
+	if r.OK() || len(r.Conflicts) != 1 || r.Duplicates != 0 {
+		t.Errorf("want a failed report with 1 conflict and no duplicates, got %+v", r)
+	}
+}

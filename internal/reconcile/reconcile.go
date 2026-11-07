@@ -26,6 +26,7 @@ type Report struct {
 	Entries    int // distinct journal entries in Kafka
 	Accounts   int
 
+	Conflicts  []int64 // entry ids seen again with different contents: never a harmless redelivery
 	Unbalanced []int64 // entries in Kafka whose postings don't sum to zero
 	Phantom    []int64 // entries in Kafka that never committed in Postgres
 	Missing    []int64 // committed entries absent from Kafka
@@ -49,15 +50,26 @@ func (r Report) Lost() int {
 }
 
 func (r Report) OK() bool {
-	return len(r.Unbalanced) == 0 && len(r.Phantom) == 0 && r.Lost() == 0 && len(r.Drift) == 0 && r.InternalDrift == 0
+	return len(r.Conflicts) == 0 && len(r.Unbalanced) == 0 && len(r.Phantom) == 0 && r.Lost() == 0 && len(r.Drift) == 0 && r.InternalDrift == 0
 }
 
 // Run reads topic from the beginning up to its current end and reconciles it
-// against the database.
+// against the database. It's safe to run against live traffic: see snapshot.
 func Run(ctx context.Context, client *kgo.Client, pool *pgxpool.Pool, topic string) (Report, error) {
+	committed, unrelayed, err := snapshot(ctx, pool)
+	if err != nil {
+		return Report{}, err
+	}
+
 	entries, report, err := readTopic(ctx, client, topic)
 	if err != nil {
 		return report, err
+	}
+	report.Unrelayed = unrelayed
+	for _, id := range committed {
+		if entries[id] == nil {
+			report.Missing = append(report.Missing, id)
+		}
 	}
 
 	balances := map[string]int64{}
@@ -77,6 +89,7 @@ func Run(ctx context.Context, client *kgo.Client, pool *pgxpool.Pool, topic stri
 	if err := compare(ctx, pool, entries, balances, &report); err != nil {
 		return report, err
 	}
+	slices.Sort(report.Conflicts)
 	slices.Sort(report.Unbalanced)
 	slices.Sort(report.Phantom)
 	slices.Sort(report.Missing)
@@ -129,8 +142,12 @@ func readTopic(ctx context.Context, client *kgo.Client, topic string) (map[int64
 			if err := proto.Unmarshal(r.Value, e); err != nil {
 				return nil, report, fmt.Errorf("offset %d: %w", r.Offset, err)
 			}
-			if _, seen := entries[e.EntryId]; seen {
-				report.Duplicates++
+			if first, seen := entries[e.EntryId]; seen {
+				if proto.Equal(first, e) {
+					report.Duplicates++
+				} else {
+					report.Conflicts = append(report.Conflicts, e.EntryId)
+				}
 				continue
 			}
 			entries[e.EntryId] = e
@@ -140,39 +157,50 @@ func readTopic(ctx context.Context, client *kgo.Client, topic string) (map[int64
 	return entries, report, nil
 }
 
-func compare(ctx context.Context, pool *pgxpool.Pool, entries map[int64]*eventsv1.LedgerEntry, balances map[string]int64, report *Report) error {
-	rows, err := pool.Query(ctx, `SELECT id FROM journal_entries`)
-	if err != nil {
-		return err
-	}
-	committed, err := pgx.CollectRows(rows, pgx.RowTo[int64])
-	if err != nil {
-		return err
-	}
-
-	inDB := map[int64]bool{}
-	for _, id := range committed {
-		inDB[id] = true
-		if entries[id] == nil {
-			report.Missing = append(report.Missing, id)
+// snapshot reads, at one instant, which entries have committed and how many
+// ledger events are still waiting in the outbox. It must run before Kafka is
+// read: every entry it sees has then either reached Kafka by the time we
+// read it or is still in the outbox, so Missing beyond Unrelayed really is
+// lost. (Read Postgres after Kafka instead and entries published in between
+// look lost.)
+func snapshot(ctx context.Context, pool *pgxpool.Pool) (committed []int64, unrelayed int, err error) {
+	err = pgx.BeginTxFunc(ctx, pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT id FROM journal_entries`)
+		if err != nil {
+			return err
 		}
+		if committed, err = pgx.CollectRows(rows, pgx.RowTo[int64]); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `
+			SELECT count(*) FROM outbox WHERE topic LIKE '%herd.ledger.v1' AND published_at IS NULL`,
+		).Scan(&unrelayed)
+	})
+
+	return committed, unrelayed, err
+}
+
+// compare runs after Kafka has been read, so every genuine entry in Kafka has
+// committed by now and anything Postgres lacks is a phantom.
+func compare(ctx context.Context, pool *pgxpool.Pool, entries map[int64]*eventsv1.LedgerEntry, balances map[string]int64, report *Report) error {
+	seen := slices.Collect(maps.Keys(entries))
+	var inDB []int64
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(array_agg(id), '{}') FROM journal_entries WHERE id = ANY($1)`, seen).Scan(&inDB); err != nil {
+		return err
 	}
-	for id := range entries {
-		if !inDB[id] {
+	committed := map[int64]bool{}
+	for _, id := range inDB {
+		committed[id] = true
+	}
+	for _, id := range seen {
+		if !committed[id] {
 			report.Phantom = append(report.Phantom, id)
 		}
 	}
 
-	if err := pool.QueryRow(ctx, `
-		SELECT count(*) FROM outbox WHERE topic LIKE '%herd.ledger.v1' AND published_at IS NULL`,
-	).Scan(&report.Unrelayed); err != nil {
-		return err
-	}
-
 	// Compare against Postgres's view of the same entries, so relay lag
 	// (entries not in Kafka yet) doesn't show up as drift.
-	seen := slices.Collect(maps.Keys(entries))
-	rows, err = pool.Query(ctx, `
+	rows, err := pool.Query(ctx, `
 		SELECT account, sum(amount) FROM postings WHERE entry_id = ANY($1) GROUP BY account`, seen)
 	if err != nil {
 		return err

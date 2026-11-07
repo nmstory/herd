@@ -47,14 +47,19 @@ func main() {
 
 	fmt.Printf("replayed %d ledger events (%d duplicates dropped) · %d entries · %d accounts\n",
 		r.Events, r.Duplicates, r.Entries, r.Accounts)
-	check(len(r.Unbalanced) == 0, "every entry balances", fmt.Sprintf("%d unbalanced entries: %v", len(r.Unbalanced), r.Unbalanced))
-	check(len(r.Phantom) == 0, "no phantom entries", fmt.Sprintf("%d entries in Kafka never committed: %v", len(r.Phantom), r.Phantom))
+	check(len(r.Conflicts) == 0, "no conflicting duplicates",
+		fmt.Sprintf("%d entry ids seen twice with different contents %s; is another database writing to this topic?", len(r.Conflicts), some(r.Conflicts)))
+	check(len(r.Unbalanced) == 0, "every entry balances", fmt.Sprintf("%d unbalanced entries %s", len(r.Unbalanced), some(r.Unbalanced)))
+	check(len(r.Phantom) == 0, "no phantom entries", fmt.Sprintf("%d entries in Kafka never committed %s", len(r.Phantom), some(r.Phantom)))
 	check(r.Lost() == 0,
 		fmt.Sprintf("nothing lost (%d entries still in the outbox)", r.Unrelayed),
 		fmt.Sprintf("%d committed entries never reached Kafka", r.Lost()))
 	driftMsg := fmt.Sprintf("%d accounts drifted:", len(r.Drift))
-	for _, d := range r.Drift {
+	for _, d := range r.Drift[:min(len(r.Drift), 10)] {
 		driftMsg += fmt.Sprintf("\n      %s  kafka %d  postgres %d", d.Account, d.Kafka, d.Postgres)
+	}
+	if len(r.Drift) > 10 {
+		driftMsg += "\n      …"
 	}
 	check(len(r.Drift) == 0, "balances match Postgres", driftMsg)
 	check(r.InternalDrift == 0, "running balances match postings", fmt.Sprintf("%d running balances disagree with postings", r.InternalDrift))
@@ -72,4 +77,12 @@ func check(ok bool, pass, fail string) {
 	} else {
 		fmt.Println("  ✗", fail)
 	}
+}
+
+// some formats the first few ids of a list.
+func some(ids []int64) string {
+	if len(ids) > 10 {
+		return fmt.Sprintf("%v…", ids[:10])
+	}
+	return fmt.Sprint(ids)
 }
