@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nmstory/herd/internal/config"
+	"github.com/nmstory/herd/internal/db"
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/lease/memstore"
 	"github.com/nmstory/herd/internal/lease/pgstore"
@@ -102,7 +103,7 @@ func openStore(ctx context.Context, kind, url, lock string, dropIndex bool, devi
 		admin.Close()
 	}
 
-	if err := pgstore.Migrate(ctx, pool); err != nil {
+	if err := db.Migrate(ctx, pool); err != nil {
 		cleanup()
 		return nil, nil, nil, err
 	}

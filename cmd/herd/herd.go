@@ -16,6 +16,7 @@ import (
 
 	herdv1 "github.com/nmstory/herd/gen/go/herd/v1"
 	"github.com/nmstory/herd/internal/config"
+	"github.com/nmstory/herd/internal/db"
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/lease/memstore"
 	"github.com/nmstory/herd/internal/lease/pgstore"
@@ -99,7 +100,7 @@ func openStore(ctx context.Context, kind, databaseURL string, cfg *config.Config
 		if err != nil {
 			return nil, err
 		}
-		if err := pgstore.Migrate(ctx, pool); err != nil {
+		if err := db.Migrate(ctx, pool); err != nil {
 			return nil, err
 		}
 		if err := pgstore.SyncDevices(ctx, pool, cfg.DeviceConfigs); err != nil {
