@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package herd.events.v1;
+
+option go_package = "github.com/nmstory/herd/api/proto/herd/events/v1;eventsv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Events herd publishes to Kafka through its transactional outbox. Delivery
+// is at-least-once: every record carries a herd-event-id header (the outbox
+// row id) so consumers can drop duplicates.
+
+// Published to herd.lease.v1, keyed by device_id, so each device's events
+// arrive in order.
+message LeaseEvent {
+    enum Type {
+        TYPE_UNSPECIFIED = 0;
+        TYPE_ACQUIRED = 1;
+        TYPE_RELEASED = 2;
+        TYPE_EXPIRED = 3;
+    }
+
+    Type type = 1;
+    string lease_id = 2;
+    string device_id = 3;
+    string holder = 4;
+    google.protobuf.Timestamp expires_at = 5;
+    int64 held = 6;
+    google.protobuf.Timestamp occurred_at = 7;
+}
+
+// Published to herd.ledger.v1, keyed by holder, so each wallet's entries
+// arrive in order. entry_id is unique, so it also works as a dedupe key.
+message LedgerEntry {
+    int64 entry_id = 1;
+    string kind = 2;  // topup, hold, capture, expire
+    string holder = 3;
+    string lease_id = 4;
+    repeated Posting postings = 5;
+    google.protobuf.Timestamp occurred_at = 6;
+}
+
+message Posting {
+    string account = 1;
+    int64 amount = 2;
+}

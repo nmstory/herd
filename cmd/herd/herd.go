@@ -22,6 +22,7 @@ import (
 	"github.com/nmstory/herd/internal/lease/memstore"
 	"github.com/nmstory/herd/internal/lease/pgstore"
 	"github.com/nmstory/herd/internal/ledger"
+	"github.com/nmstory/herd/internal/outbox"
 	"github.com/nmstory/herd/internal/registry"
 )
 
@@ -178,7 +179,7 @@ func openStore(ctx context.Context, kind, databaseURL string, cfg *config.Config
 		}
 		store := pgstore.New(pool)
 		store.Billing = true
-		return store, ledger.NewBook(pool), nil
+		return store, ledger.NewBook(pool, outbox.Table{}), nil
 	default:
 		return nil, nil, errors.New("unknown store " + kind)
 	}

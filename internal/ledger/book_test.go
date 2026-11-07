@@ -7,12 +7,13 @@ import (
 
 	"github.com/nmstory/herd/internal/db/dbtest"
 	"github.com/nmstory/herd/internal/ledger"
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 func TestTopUp(t *testing.T) {
 	ctx := context.Background()
 	_, pool := dbtest.Open(t)
-	book := ledger.NewBook(pool)
+	book := ledger.NewBook(pool, outbox.Table{})
 
 	for range 2 { // the retry must not credit twice
 		w, err := book.TopUp(ctx, "alice", 500, "k1")

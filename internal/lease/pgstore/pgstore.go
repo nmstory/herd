@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -26,6 +27,7 @@ import (
 	"github.com/nmstory/herd/internal/config"
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/ledger"
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 // LockMode picks how Acquire locks its candidate device. Only SkipLocked is
@@ -47,12 +49,16 @@ type Store struct {
 	// Billing charges leases to the holder's wallet. See billing.go.
 	Billing bool
 
+	// Events receives an event for every lease change and journal entry,
+	// inside the transaction that makes it. nil disables events.
+	Events outbox.Writer
+
 	// Conflicts counts unique violations that forced Acquire to retry.
 	Conflicts atomic.Int64
 }
 
 func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{pool: pool, Events: outbox.Table{}}
 }
 
 // SyncDevices upserts the configured devices. Devices missing from the config
@@ -170,20 +176,16 @@ func (s *Store) tryAcquire(ctx context.Context, p lease.AcquireParams) (lease.Le
 
 		// Close out any expired lease so the partial unique index lets a new
 		// one in.
-		rows, err := tx.Query(ctx, `
+		expired, err := s.endLeases(ctx, tx, `
 			UPDATE leases SET released_at = expires_at
 			WHERE device_id = $1 AND released_at IS NULL AND expires_at <= now()
-			RETURNING id::text`, deviceID)
-		if err != nil {
-			return err
-		}
-		expired, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			RETURNING `+endedColumns, deviceID)
 		if err != nil {
 			return err
 		}
 		if s.Billing {
-			for _, id := range expired {
-				if _, err := settle(ctx, tx, id); err != nil {
+			for _, e := range expired {
+				if _, err := settle(ctx, tx, s.Events, e.ID); err != nil {
 					return err
 				}
 			}
@@ -197,16 +199,20 @@ func (s *Store) tryAcquire(ctx context.Context, p lease.AcquireParams) (lease.Le
 			l.Held = l.CreditsPerMinute * minutes(p.Duration)
 		}
 
+		var acquiredAt time.Time
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO leases (device_id, holder, idempotency_key, request_hash, expires_at, credits_per_minute, held)
 			VALUES ($1, $2, $3, $4, now() + $5 * interval '1 microsecond', $6, $7)
-			RETURNING id, expires_at`,
+			RETURNING id, expires_at, acquired_at`,
 			deviceID, p.Holder, p.IdempotencyKey, hash, p.Duration.Microseconds(), l.CreditsPerMinute, l.Held,
-		).Scan(&l.ID, &l.ExpiresAt); err != nil {
+		).Scan(&l.ID, &l.ExpiresAt, &acquiredAt); err != nil {
+			return err
+		}
+		if err := s.leaseAcquired(ctx, tx, l, acquiredAt); err != nil {
 			return err
 		}
 
-		return hold(ctx, tx, l)
+		return hold(ctx, tx, s.Events, l)
 	})
 	if err != nil {
 		return lease.Lease{}, err
@@ -246,14 +252,15 @@ func (s *Store) Release(ctx context.Context, leaseID, holder string) (lease.Sett
 		}
 
 		// A lease that has already expired ends at its expiry, not now.
-		if _, err := tx.Exec(ctx, `
+		if _, err := s.endLeases(ctx, tx, `
 			UPDATE leases SET released_at = least(now(), expires_at)
-			WHERE id = $1 AND released_at IS NULL`, id); err != nil {
+			WHERE id = $1 AND released_at IS NULL
+			RETURNING `+endedColumns, id); err != nil {
 			return err
 		}
 
 		if s.Billing {
-			settled, err = settle(ctx, tx, leaseID)
+			settled, err = settle(ctx, tx, s.Events, leaseID)
 		}
 		return err
 	})

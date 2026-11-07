@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 var (
@@ -35,11 +37,12 @@ type StatementLine struct {
 // Book is the read side of the ledger plus top-ups, which are the one
 // movement that doesn't involve a lease.
 type Book struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	events outbox.Writer
 }
 
-func NewBook(pool *pgxpool.Pool) *Book {
-	return &Book{pool: pool}
+func NewBook(pool *pgxpool.Pool, events outbox.Writer) *Book {
+	return &Book{pool: pool, events: events}
 }
 
 func (b *Book) TopUp(ctx context.Context, holder string, amount int64, key string) (Wallet, error) {
@@ -54,7 +57,7 @@ func (b *Book) TopUp(ctx context.Context, holder string, amount int64, key strin
 
 	err := pgx.BeginFunc(ctx, b.pool, func(tx pgx.Tx) error {
 		idemKey := fmt.Sprintf("topup:%s:%s", holder, key)
-		_, posted, err := Post(ctx, tx, Entry{
+		_, posted, err := Post(ctx, tx, b.events, Entry{
 			Kind: KindTopUp, Holder: holder, IdempotencyKey: idemKey,
 			Postings: []Posting{{External, -amount}, {WalletAccount(holder), amount}},
 		})

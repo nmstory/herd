@@ -15,6 +15,7 @@ import (
 
 	"github.com/nmstory/herd/internal/db/dbtest"
 	"github.com/nmstory/herd/internal/ledger"
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 func TestValidate(t *testing.T) {
@@ -52,7 +53,7 @@ func spend(holder string, amount int64, key string) ledger.Entry {
 
 func post(ctx context.Context, pool *pgxpool.Pool, e ledger.Entry) (posted bool, err error) {
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		_, posted, err = ledger.Post(ctx, tx, e)
+		_, posted, err = ledger.Post(ctx, tx, outbox.Table{}, e)
 		return err
 	})
 	return posted, err

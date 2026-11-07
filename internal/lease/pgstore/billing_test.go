@@ -15,6 +15,7 @@ import (
 	"github.com/nmstory/herd/internal/db/dbtest"
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/ledger"
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 func models(n int, model string) []config.DeviceConfig {
@@ -34,7 +35,7 @@ func setupBilling(t *testing.T, devices []config.DeviceConfig, prices map[string
 	s := New(pool)
 	s.Billing = true
 
-	return s, ledger.NewBook(pool), pool
+	return s, ledger.NewBook(pool, outbox.Table{}), pool
 }
 
 func wallet(t *testing.T, book *ledger.Book, holder string) ledger.Wallet {
@@ -212,7 +213,7 @@ func TestConcurrentSettlersSettleEachLeaseOnce(t *testing.T) {
 	if err := SyncPrices(ctx, pool, map[string]int64{"rpi4": 1}); err != nil {
 		t.Fatal(err)
 	}
-	book := ledger.NewBook(pool)
+	book := ledger.NewBook(pool, outbox.Table{})
 	if _, err := book.TopUp(ctx, "alice", 100, "t1"); err != nil {
 		t.Fatal(err)
 	}

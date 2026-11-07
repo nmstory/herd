@@ -12,9 +12,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	eventsv1 "github.com/nmstory/herd/gen/go/herd/events/v1"
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 const (
@@ -82,9 +87,10 @@ func materialized(account string) bool {
 	return strings.HasPrefix(account, "wallet:") || strings.HasPrefix(account, "hold:")
 }
 
-// Post records the entry and updates balances. If an entry with the same
-// idempotency key already exists, Post does nothing and returns posted=false.
-func Post(ctx context.Context, tx pgx.Tx, e Entry) (id int64, posted bool, err error) {
+// Post records the entry, updates balances and writes a LedgerEntry event
+// through w (if non-nil), all in tx. If an entry with the same idempotency
+// key already exists, Post does nothing and returns posted=false.
+func Post(ctx context.Context, tx pgx.Tx, w outbox.Writer, e Entry) (id int64, posted bool, err error) {
 	if err := e.Validate(); err != nil {
 		return 0, false, err
 	}
@@ -93,11 +99,12 @@ func Post(ctx context.Context, tx pgx.Tx, e Entry) (id int64, posted bool, err e
 	if e.LeaseID != "" {
 		leaseID = &e.LeaseID
 	}
+	var createdAt time.Time
 	err = tx.QueryRow(ctx, `
 		INSERT INTO journal_entries (kind, holder, lease_id, idempotency_key)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (idempotency_key) DO NOTHING
-		RETURNING id`, e.Kind, e.Holder, leaseID, e.IdempotencyKey).Scan(&id)
+		RETURNING id, created_at`, e.Kind, e.Holder, leaseID, e.IdempotencyKey).Scan(&id, &createdAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -119,6 +126,21 @@ func Post(ctx context.Context, tx pgx.Tx, e Entry) (id int64, posted bool, err e
 			if err := applyBalance(ctx, tx, p); err != nil {
 				return 0, false, err
 			}
+		}
+	}
+
+	// Written after the balance updates, so the wallet row is already locked
+	// and outbox ids for one wallet are allocated in commit order.
+	if w != nil {
+		event := &eventsv1.LedgerEntry{
+			EntryId: id, Kind: string(e.Kind), Holder: e.Holder, LeaseId: e.LeaseID,
+			OccurredAt: timestamppb.New(createdAt),
+		}
+		for _, p := range postings {
+			event.Postings = append(event.Postings, &eventsv1.Posting{Account: p.Account, Amount: p.Amount})
+		}
+		if err := w.Write(ctx, tx, outbox.LedgerTopic, e.Holder, event); err != nil {
+			return 0, false, err
 		}
 	}
 

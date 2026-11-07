@@ -11,6 +11,7 @@ import (
 
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/ledger"
+	"github.com/nmstory/herd/internal/outbox"
 )
 
 // Billing works like a card payment:
@@ -55,12 +56,12 @@ func minutes(d time.Duration) int64 {
 	return int64((d + time.Minute - 1) / time.Minute)
 }
 
-func hold(ctx context.Context, tx pgx.Tx, l lease.Lease) error {
+func hold(ctx context.Context, tx pgx.Tx, w outbox.Writer, l lease.Lease) error {
 	if l.Held == 0 {
 		return nil
 	}
 
-	_, _, err := ledger.Post(ctx, tx, ledger.Entry{
+	_, _, err := ledger.Post(ctx, tx, w, ledger.Entry{
 		Kind: ledger.KindHold, Holder: l.Holder, LeaseID: l.ID, IdempotencyKey: "hold:" + l.ID,
 		Postings: []ledger.Posting{
 			{Account: ledger.WalletAccount(l.Holder), Amount: -l.Held},
@@ -77,7 +78,7 @@ func hold(ctx context.Context, tx pgx.Tx, l lease.Lease) error {
 // settle releases a lease's hold, charging for the minutes between
 // acquired_at and released_at. The caller must have set released_at. If the
 // lease has already been settled, settle returns that original settlement.
-func settle(ctx context.Context, tx pgx.Tx, leaseID string) (lease.Settlement, error) {
+func settle(ctx context.Context, tx pgx.Tx, w outbox.Writer, leaseID string) (lease.Settlement, error) {
 	var held int64
 	err := tx.QueryRow(ctx, `SELECT balance FROM account_balances WHERE account = $1 FOR UPDATE`,
 		ledger.HoldAccount(leaseID)).Scan(&held)
@@ -116,7 +117,7 @@ func settle(ctx context.Context, tx pgx.Tx, leaseID string) (lease.Settlement, e
 		postings = append(postings, ledger.Posting{Account: ledger.WalletAccount(holder), Amount: s.Returned})
 	}
 
-	_, _, err = ledger.Post(ctx, tx, ledger.Entry{
+	_, _, err = ledger.Post(ctx, tx, w, ledger.Entry{
 		Kind: kind, Holder: holder, LeaseID: leaseID, IdempotencyKey: "settle:" + leaseID, Postings: postings,
 	})
 
@@ -158,10 +159,12 @@ func (s *Store) SettleExpired(ctx context.Context, limit int) (int, error) {
 		}
 
 		for _, id := range ids {
-			if _, err := tx.Exec(ctx, `UPDATE leases SET released_at = expires_at WHERE id = $1 AND released_at IS NULL`, id); err != nil {
+			if _, err := s.endLeases(ctx, tx, `
+				UPDATE leases SET released_at = expires_at WHERE id = $1 AND released_at IS NULL
+				RETURNING `+endedColumns, id); err != nil {
 				return err
 			}
-			if _, err := settle(ctx, tx, id); err != nil {
+			if _, err := settle(ctx, tx, s.Events, id); err != nil {
 				return err
 			}
 		}
