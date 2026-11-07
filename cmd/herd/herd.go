@@ -7,9 +7,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -159,30 +161,37 @@ func toStatus(err error) error {
 	return status.Error(code, err.Error())
 }
 
-func openStore(ctx context.Context, kind, databaseURL string, cfg *config.Config) (lease.Store, *ledger.Book, error) {
-	switch kind {
-	case "memory":
-		return memstore.New(registry.New(cfg)), nil, nil
-	case "postgres":
-		pool, err := pgxpool.New(ctx, databaseURL)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := db.Migrate(ctx, pool); err != nil {
-			return nil, nil, err
-		}
-		if err := pgstore.SyncDevices(ctx, pool, cfg.DeviceConfigs); err != nil {
-			return nil, nil, err
-		}
-		if err := pgstore.SyncPrices(ctx, pool, cfg.Prices); err != nil {
-			return nil, nil, err
-		}
-		store := pgstore.New(pool)
-		store.Billing = true
-		return store, ledger.NewBook(pool, outbox.Table{}), nil
-	default:
-		return nil, nil, errors.New("unknown store " + kind)
+// openPostgres migrates the database and loads devices and prices into it.
+func openPostgres(ctx context.Context, databaseURL string, cfg *config.Config) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, err
 	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		return nil, err
+	}
+	if err := pgstore.SyncDevices(ctx, pool, cfg.DeviceConfigs); err != nil {
+		return nil, err
+	}
+	if err := pgstore.SyncPrices(ctx, pool, cfg.Prices); err != nil {
+		return nil, err
+	}
+
+	return pool, nil
+}
+
+// startRelay publishes the outbox to Kafka in the background.
+func startRelay(ctx context.Context, pool *pgxpool.Pool, brokers string) error {
+	client, err := kgo.NewClient(kgo.SeedBrokers(strings.Split(brokers, ",")...))
+	if err != nil {
+		return err
+	}
+	if err := outbox.EnsureTopics(ctx, client, 3); err != nil {
+		return err
+	}
+
+	go (&outbox.Relay{Pool: pool, Client: client}).Run(ctx)
+	return nil
 }
 
 func main() {
@@ -192,6 +201,7 @@ func main() {
 		storeKind   = flag.String("store", "memory", "lease store: memory or postgres")
 		databaseURL = flag.String("database-url", os.Getenv("DATABASE_URL"), "Postgres URL (with -store=postgres)")
 		settleEvery = flag.Duration("settle-interval", 5*time.Second, "how often to charge expired leases (with -store=postgres)")
+		kafka       = flag.String("kafka", "", "comma-separated Kafka brokers to publish events to (with -store=postgres)")
 	)
 	flag.Parse()
 
@@ -200,13 +210,28 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	store, book, err := openStore(context.Background(), *storeKind, *databaseURL, cfg)
-	if err != nil {
-		log.Fatalf("failed to open %s store: %v", *storeKind, err)
-	}
+	ctx := context.Background()
+	server := &HerdServiceServer{}
+	switch *storeKind {
+	case "memory":
+		server.store = memstore.New(registry.New(cfg))
+	case "postgres":
+		pool, err := openPostgres(ctx, *databaseURL, cfg)
+		if err != nil {
+			log.Fatalf("failed to open postgres: %v", err)
+		}
+		store := pgstore.New(pool)
+		store.Billing = true
+		server.store, server.book = store, ledger.NewBook(pool, outbox.Table{})
 
-	if pg, ok := store.(*pgstore.Store); ok {
-		go pg.RunSettler(context.Background(), *settleEvery)
+		go store.RunSettler(ctx, *settleEvery)
+		if *kafka != "" {
+			if err := startRelay(ctx, pool, *kafka); err != nil {
+				log.Fatalf("failed to start relay: %v", err)
+			}
+		}
+	default:
+		log.Fatalf("unknown store %q", *storeKind)
 	}
 
 	lis, err := net.Listen("tcp", *addr)
@@ -215,7 +240,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	herdv1.RegisterHerdServiceServer(grpcServer, &HerdServiceServer{store: store, book: book})
+	herdv1.RegisterHerdServiceServer(grpcServer, server)
 
 	log.Printf("herd listening on %s with %s store (%d devices)", *addr, *storeKind, len(cfg.DeviceConfigs))
 	if err := grpcServer.Serve(lis); err != nil {

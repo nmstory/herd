@@ -23,7 +23,8 @@ const usage = `usage:
   herdctl [-addr host:port] release [-holder name] <lease-id>
   herdctl [-addr host:port] wallet topup [-holder name] [-key idempotency-key] <amount>
   herdctl [-addr host:port] wallet show [-holder name]
-  herdctl [-addr host:port] wallet statement [-holder name] [-n 50]`
+  herdctl [-addr host:port] wallet statement [-holder name] [-n 50]
+  herdctl events [-brokers localhost:19092] [-from-start] tail`
 
 func main() {
 	addr := flag.String("addr", "localhost:9000", "herd address")
@@ -32,6 +33,11 @@ func main() {
 	if flag.NArg() == 0 {
 		flag.Usage()
 		os.Exit(2)
+	}
+
+	if flag.Arg(0) == "events" {
+		events(flag.Args()[1:]) // talks to Kafka, not herd
+		return
 	}
 
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials())) // no TLS for now
