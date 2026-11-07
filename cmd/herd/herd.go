@@ -20,12 +20,14 @@ import (
 	"github.com/nmstory/herd/internal/lease"
 	"github.com/nmstory/herd/internal/lease/memstore"
 	"github.com/nmstory/herd/internal/lease/pgstore"
+	"github.com/nmstory/herd/internal/ledger"
 	"github.com/nmstory/herd/internal/registry"
 )
 
 type HerdServiceServer struct {
 	herdv1.UnimplementedHerdServiceServer
 	store lease.Store
+	book  *ledger.Book // nil with the in-memory store, which has no credits
 }
 
 func (s *HerdServiceServer) ListDevices(ctx context.Context, req *herdv1.ListDevicesRequest) (*herdv1.ListDevicesResponse, error) {
@@ -73,10 +75,70 @@ func (s *HerdServiceServer) ReleaseLease(ctx context.Context, req *herdv1.Releas
 	return &herdv1.ReleaseLeaseResponse{}, nil
 }
 
+func (s *HerdServiceServer) TopUp(ctx context.Context, req *herdv1.TopUpRequest) (*herdv1.Wallet, error) {
+	if s.book == nil {
+		return nil, errNoCredits
+	}
+	w, err := s.book.TopUp(ctx, req.GetHolder(), req.GetAmount(), req.GetIdempotencyKey())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+
+	return walletProto(w), nil
+}
+
+func (s *HerdServiceServer) GetWallet(ctx context.Context, req *herdv1.GetWalletRequest) (*herdv1.Wallet, error) {
+	if s.book == nil {
+		return nil, errNoCredits
+	}
+	w, err := s.book.Wallet(ctx, req.GetHolder())
+	if err != nil {
+		return nil, toStatus(err)
+	}
+
+	return walletProto(w), nil
+}
+
+func (s *HerdServiceServer) ListStatement(ctx context.Context, req *herdv1.ListStatementRequest) (*herdv1.ListStatementResponse, error) {
+	if s.book == nil {
+		return nil, errNoCredits
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 50
+	}
+
+	lines, err := s.book.Statement(ctx, req.GetHolder(), limit)
+	if err != nil {
+		return nil, toStatus(err)
+	}
+
+	resp := &herdv1.ListStatementResponse{}
+	for _, l := range lines {
+		resp.Lines = append(resp.Lines, &herdv1.StatementLine{
+			EntryId: l.EntryID,
+			Kind:    string(l.Kind),
+			LeaseId: l.LeaseID,
+			Amount:  l.Amount,
+			Charged: l.Charged,
+			Balance: l.Balance,
+			At:      timestamppb.New(l.At),
+		})
+	}
+
+	return resp, nil
+}
+
+var errNoCredits = status.Error(codes.Unimplemented, "credits need the postgres store")
+
+func walletProto(w ledger.Wallet) *herdv1.Wallet {
+	return &herdv1.Wallet{Holder: w.Holder, Available: w.Available, Held: w.Held}
+}
+
 func toStatus(err error) error {
 	code := codes.Internal
 	switch {
-	case errors.Is(err, lease.ErrInvalidArgument):
+	case errors.Is(err, lease.ErrInvalidArgument), errors.Is(err, ledger.ErrInvalidArgument):
 		code = codes.InvalidArgument
 	case errors.Is(err, lease.ErrNoDeviceAvailable):
 		code = codes.ResourceExhausted
@@ -84,31 +146,32 @@ func toStatus(err error) error {
 		code = codes.NotFound
 	case errors.Is(err, lease.ErrNotHolder):
 		code = codes.PermissionDenied
-	case errors.Is(err, lease.ErrIdempotencyMismatch):
+	case errors.Is(err, lease.ErrIdempotencyMismatch), errors.Is(err, ledger.ErrIdempotencyMismatch),
+		errors.Is(err, ledger.ErrInsufficientFunds):
 		code = codes.FailedPrecondition
 	}
 
 	return status.Error(code, err.Error())
 }
 
-func openStore(ctx context.Context, kind, databaseURL string, cfg *config.Config) (lease.Store, error) {
+func openStore(ctx context.Context, kind, databaseURL string, cfg *config.Config) (lease.Store, *ledger.Book, error) {
 	switch kind {
 	case "memory":
-		return memstore.New(registry.New(cfg)), nil
+		return memstore.New(registry.New(cfg)), nil, nil
 	case "postgres":
 		pool, err := pgxpool.New(ctx, databaseURL)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := db.Migrate(ctx, pool); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := pgstore.SyncDevices(ctx, pool, cfg.DeviceConfigs); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return pgstore.New(pool), nil
+		return pgstore.New(pool), ledger.NewBook(pool), nil
 	default:
-		return nil, errors.New("unknown store " + kind)
+		return nil, nil, errors.New("unknown store " + kind)
 	}
 }
 
@@ -126,7 +189,7 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	store, err := openStore(context.Background(), *storeKind, *databaseURL, cfg)
+	store, book, err := openStore(context.Background(), *storeKind, *databaseURL, cfg)
 	if err != nil {
 		log.Fatalf("failed to open %s store: %v", *storeKind, err)
 	}
@@ -137,7 +200,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	herdv1.RegisterHerdServiceServer(grpcServer, &HerdServiceServer{store: store})
+	herdv1.RegisterHerdServiceServer(grpcServer, &HerdServiceServer{store: store, book: book})
 
 	log.Printf("herd listening on %s with %s store (%d devices)", *addr, *storeKind, len(cfg.DeviceConfigs))
 	if err := grpcServer.Serve(lis); err != nil {

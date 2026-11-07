@@ -502,6 +502,358 @@ func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
 	return file_herd_v1_herd_proto_rawDescGZIP(), []int{7}
 }
 
+type Wallet struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Holder        string                 `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
+	Available     int64                  `protobuf:"varint,2,opt,name=available,proto3" json:"available,omitempty"` // spendable credits
+	Held          int64                  `protobuf:"varint,3,opt,name=held,proto3" json:"held,omitempty"`           // reserved by leases that haven't settled
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Wallet) Reset() {
+	*x = Wallet{}
+	mi := &file_herd_v1_herd_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Wallet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Wallet) ProtoMessage() {}
+
+func (x *Wallet) ProtoReflect() protoreflect.Message {
+	mi := &file_herd_v1_herd_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Wallet.ProtoReflect.Descriptor instead.
+func (*Wallet) Descriptor() ([]byte, []int) {
+	return file_herd_v1_herd_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Wallet) GetHolder() string {
+	if x != nil {
+		return x.Holder
+	}
+	return ""
+}
+
+func (x *Wallet) GetAvailable() int64 {
+	if x != nil {
+		return x.Available
+	}
+	return 0
+}
+
+func (x *Wallet) GetHeld() int64 {
+	if x != nil {
+		return x.Held
+	}
+	return 0
+}
+
+type TopUpRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Holder         string                 `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
+	Amount         int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *TopUpRequest) Reset() {
+	*x = TopUpRequest{}
+	mi := &file_herd_v1_herd_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopUpRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopUpRequest) ProtoMessage() {}
+
+func (x *TopUpRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_herd_v1_herd_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopUpRequest.ProtoReflect.Descriptor instead.
+func (*TopUpRequest) Descriptor() ([]byte, []int) {
+	return file_herd_v1_herd_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *TopUpRequest) GetHolder() string {
+	if x != nil {
+		return x.Holder
+	}
+	return ""
+}
+
+func (x *TopUpRequest) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *TopUpRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type GetWalletRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Holder        string                 `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetWalletRequest) Reset() {
+	*x = GetWalletRequest{}
+	mi := &file_herd_v1_herd_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetWalletRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetWalletRequest) ProtoMessage() {}
+
+func (x *GetWalletRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_herd_v1_herd_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetWalletRequest.ProtoReflect.Descriptor instead.
+func (*GetWalletRequest) Descriptor() ([]byte, []int) {
+	return file_herd_v1_herd_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetWalletRequest) GetHolder() string {
+	if x != nil {
+		return x.Holder
+	}
+	return ""
+}
+
+type ListStatementRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Holder        string                 `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"` // most recent entries; 0 means 50
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListStatementRequest) Reset() {
+	*x = ListStatementRequest{}
+	mi := &file_herd_v1_herd_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListStatementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListStatementRequest) ProtoMessage() {}
+
+func (x *ListStatementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_herd_v1_herd_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListStatementRequest.ProtoReflect.Descriptor instead.
+func (*ListStatementRequest) Descriptor() ([]byte, []int) {
+	return file_herd_v1_herd_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListStatementRequest) GetHolder() string {
+	if x != nil {
+		return x.Holder
+	}
+	return ""
+}
+
+func (x *ListStatementRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type StatementLine struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EntryId       int64                  `protobuf:"varint,1,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"` // topup, hold, capture, expire
+	LeaseId       string                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	Amount        int64                  `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`   // change to the wallet
+	Charged       int64                  `protobuf:"varint,5,opt,name=charged,proto3" json:"charged,omitempty"` // credits charged for device time in this entry
+	Balance       int64                  `protobuf:"varint,6,opt,name=balance,proto3" json:"balance,omitempty"` // wallet balance after this entry
+	At            *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatementLine) Reset() {
+	*x = StatementLine{}
+	mi := &file_herd_v1_herd_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatementLine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatementLine) ProtoMessage() {}
+
+func (x *StatementLine) ProtoReflect() protoreflect.Message {
+	mi := &file_herd_v1_herd_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatementLine.ProtoReflect.Descriptor instead.
+func (*StatementLine) Descriptor() ([]byte, []int) {
+	return file_herd_v1_herd_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *StatementLine) GetEntryId() int64 {
+	if x != nil {
+		return x.EntryId
+	}
+	return 0
+}
+
+func (x *StatementLine) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *StatementLine) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *StatementLine) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *StatementLine) GetCharged() int64 {
+	if x != nil {
+		return x.Charged
+	}
+	return 0
+}
+
+func (x *StatementLine) GetBalance() int64 {
+	if x != nil {
+		return x.Balance
+	}
+	return 0
+}
+
+func (x *StatementLine) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+type ListStatementResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lines         []*StatementLine       `protobuf:"bytes,1,rep,name=lines,proto3" json:"lines,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListStatementResponse) Reset() {
+	*x = ListStatementResponse{}
+	mi := &file_herd_v1_herd_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListStatementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListStatementResponse) ProtoMessage() {}
+
+func (x *ListStatementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_herd_v1_herd_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListStatementResponse.ProtoReflect.Descriptor instead.
+func (*ListStatementResponse) Descriptor() ([]byte, []int) {
+	return file_herd_v1_herd_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListStatementResponse) GetLines() []*StatementLine {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
 var File_herd_v1_herd_proto protoreflect.FileDescriptor
 
 const file_herd_v1_herd_proto_rawDesc = "" +
@@ -541,17 +893,43 @@ const file_herd_v1_herd_proto_rawDesc = "" +
 	"\x13ReleaseLeaseRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\"\x16\n" +
-	"\x14ReleaseLeaseResponse*\x91\x01\n" +
+	"\x14ReleaseLeaseResponse\"R\n" +
+	"\x06Wallet\x12\x16\n" +
+	"\x06holder\x18\x01 \x01(\tR\x06holder\x12\x1c\n" +
+	"\tavailable\x18\x02 \x01(\x03R\tavailable\x12\x12\n" +
+	"\x04held\x18\x03 \x01(\x03R\x04held\"g\n" +
+	"\fTopUpRequest\x12\x16\n" +
+	"\x06holder\x18\x01 \x01(\tR\x06holder\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"*\n" +
+	"\x10GetWalletRequest\x12\x16\n" +
+	"\x06holder\x18\x01 \x01(\tR\x06holder\"D\n" +
+	"\x14ListStatementRequest\x12\x16\n" +
+	"\x06holder\x18\x01 \x01(\tR\x06holder\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xd1\x01\n" +
+	"\rStatementLine\x12\x19\n" +
+	"\bentry_id\x18\x01 \x01(\x03R\aentryId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x19\n" +
+	"\blease_id\x18\x03 \x01(\tR\aleaseId\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\x03R\x06amount\x12\x18\n" +
+	"\acharged\x18\x05 \x01(\x03R\acharged\x12\x18\n" +
+	"\abalance\x18\x06 \x01(\x03R\abalance\x12*\n" +
+	"\x02at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"E\n" +
+	"\x15ListStatementResponse\x12,\n" +
+	"\x05lines\x18\x01 \x03(\v2\x16.herd.v1.StatementLineR\x05lines*\x91\x01\n" +
 	"\vDeviceState\x12\x1c\n" +
 	"\x18DEVICE_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11DEVICE_STATE_IDLE\x10\x01\x12\x17\n" +
 	"\x13DEVICE_STATE_LEASED\x10\x02\x12\x1a\n" +
 	"\x16DEVICE_STATE_UNHEALTHY\x10\x03\x12\x18\n" +
-	"\x14DEVICE_STATE_OFFLINE\x10\x042\xf1\x01\n" +
+	"\x14DEVICE_STATE_OFFLINE\x10\x042\xab\x03\n" +
 	"\vHerdService\x12H\n" +
 	"\vListDevices\x12\x1b.herd.v1.ListDevicesRequest\x1a\x1c.herd.v1.ListDevicesResponse\x12K\n" +
 	"\fAcquireLease\x12\x1c.herd.v1.AcquireLeaseRequest\x1a\x1d.herd.v1.AcquireLeaseResponse\x12K\n" +
-	"\fReleaseLease\x12\x1c.herd.v1.ReleaseLeaseRequest\x1a\x1d.herd.v1.ReleaseLeaseResponseB2Z0github.com/nmstory/herd/api/proto/herd/v1;herdv1b\x06proto3"
+	"\fReleaseLease\x12\x1c.herd.v1.ReleaseLeaseRequest\x1a\x1d.herd.v1.ReleaseLeaseResponse\x12/\n" +
+	"\x05TopUp\x12\x15.herd.v1.TopUpRequest\x1a\x0f.herd.v1.Wallet\x127\n" +
+	"\tGetWallet\x12\x19.herd.v1.GetWalletRequest\x1a\x0f.herd.v1.Wallet\x12N\n" +
+	"\rListStatement\x12\x1d.herd.v1.ListStatementRequest\x1a\x1e.herd.v1.ListStatementResponseB2Z0github.com/nmstory/herd/api/proto/herd/v1;herdv1b\x06proto3"
 
 var (
 	file_herd_v1_herd_proto_rawDescOnce sync.Once
@@ -566,7 +944,7 @@ func file_herd_v1_herd_proto_rawDescGZIP() []byte {
 }
 
 var file_herd_v1_herd_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_herd_v1_herd_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_herd_v1_herd_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_herd_v1_herd_proto_goTypes = []any{
 	(DeviceState)(0),              // 0: herd.v1.DeviceState
 	(*Device)(nil),                // 1: herd.v1.Device
@@ -577,33 +955,47 @@ var file_herd_v1_herd_proto_goTypes = []any{
 	(*AcquireLeaseResponse)(nil),  // 6: herd.v1.AcquireLeaseResponse
 	(*ReleaseLeaseRequest)(nil),   // 7: herd.v1.ReleaseLeaseRequest
 	(*ReleaseLeaseResponse)(nil),  // 8: herd.v1.ReleaseLeaseResponse
-	nil,                           // 9: herd.v1.Device.LabelsEntry
-	nil,                           // 10: herd.v1.ListDevicesRequest.SelectorEntry
-	nil,                           // 11: herd.v1.AcquireLeaseRequest.SelectorEntry
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 13: google.protobuf.Duration
+	(*Wallet)(nil),                // 9: herd.v1.Wallet
+	(*TopUpRequest)(nil),          // 10: herd.v1.TopUpRequest
+	(*GetWalletRequest)(nil),      // 11: herd.v1.GetWalletRequest
+	(*ListStatementRequest)(nil),  // 12: herd.v1.ListStatementRequest
+	(*StatementLine)(nil),         // 13: herd.v1.StatementLine
+	(*ListStatementResponse)(nil), // 14: herd.v1.ListStatementResponse
+	nil,                           // 15: herd.v1.Device.LabelsEntry
+	nil,                           // 16: herd.v1.ListDevicesRequest.SelectorEntry
+	nil,                           // 17: herd.v1.AcquireLeaseRequest.SelectorEntry
+	(*timestamppb.Timestamp)(nil), // 18: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 19: google.protobuf.Duration
 }
 var file_herd_v1_herd_proto_depIdxs = []int32{
-	9,  // 0: herd.v1.Device.labels:type_name -> herd.v1.Device.LabelsEntry
+	15, // 0: herd.v1.Device.labels:type_name -> herd.v1.Device.LabelsEntry
 	0,  // 1: herd.v1.Device.state:type_name -> herd.v1.DeviceState
-	12, // 2: herd.v1.Device.last_heartbeat:type_name -> google.protobuf.Timestamp
-	10, // 3: herd.v1.ListDevicesRequest.selector:type_name -> herd.v1.ListDevicesRequest.SelectorEntry
+	18, // 2: herd.v1.Device.last_heartbeat:type_name -> google.protobuf.Timestamp
+	16, // 3: herd.v1.ListDevicesRequest.selector:type_name -> herd.v1.ListDevicesRequest.SelectorEntry
 	1,  // 4: herd.v1.ListDevicesResponse.devices:type_name -> herd.v1.Device
-	11, // 5: herd.v1.AcquireLeaseRequest.selector:type_name -> herd.v1.AcquireLeaseRequest.SelectorEntry
-	13, // 6: herd.v1.AcquireLeaseRequest.duration:type_name -> google.protobuf.Duration
-	12, // 7: herd.v1.Lease.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 5: herd.v1.AcquireLeaseRequest.selector:type_name -> herd.v1.AcquireLeaseRequest.SelectorEntry
+	19, // 6: herd.v1.AcquireLeaseRequest.duration:type_name -> google.protobuf.Duration
+	18, // 7: herd.v1.Lease.expires_at:type_name -> google.protobuf.Timestamp
 	5,  // 8: herd.v1.AcquireLeaseResponse.lease:type_name -> herd.v1.Lease
-	2,  // 9: herd.v1.HerdService.ListDevices:input_type -> herd.v1.ListDevicesRequest
-	4,  // 10: herd.v1.HerdService.AcquireLease:input_type -> herd.v1.AcquireLeaseRequest
-	7,  // 11: herd.v1.HerdService.ReleaseLease:input_type -> herd.v1.ReleaseLeaseRequest
-	3,  // 12: herd.v1.HerdService.ListDevices:output_type -> herd.v1.ListDevicesResponse
-	6,  // 13: herd.v1.HerdService.AcquireLease:output_type -> herd.v1.AcquireLeaseResponse
-	8,  // 14: herd.v1.HerdService.ReleaseLease:output_type -> herd.v1.ReleaseLeaseResponse
-	12, // [12:15] is the sub-list for method output_type
-	9,  // [9:12] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	18, // 9: herd.v1.StatementLine.at:type_name -> google.protobuf.Timestamp
+	13, // 10: herd.v1.ListStatementResponse.lines:type_name -> herd.v1.StatementLine
+	2,  // 11: herd.v1.HerdService.ListDevices:input_type -> herd.v1.ListDevicesRequest
+	4,  // 12: herd.v1.HerdService.AcquireLease:input_type -> herd.v1.AcquireLeaseRequest
+	7,  // 13: herd.v1.HerdService.ReleaseLease:input_type -> herd.v1.ReleaseLeaseRequest
+	10, // 14: herd.v1.HerdService.TopUp:input_type -> herd.v1.TopUpRequest
+	11, // 15: herd.v1.HerdService.GetWallet:input_type -> herd.v1.GetWalletRequest
+	12, // 16: herd.v1.HerdService.ListStatement:input_type -> herd.v1.ListStatementRequest
+	3,  // 17: herd.v1.HerdService.ListDevices:output_type -> herd.v1.ListDevicesResponse
+	6,  // 18: herd.v1.HerdService.AcquireLease:output_type -> herd.v1.AcquireLeaseResponse
+	8,  // 19: herd.v1.HerdService.ReleaseLease:output_type -> herd.v1.ReleaseLeaseResponse
+	9,  // 20: herd.v1.HerdService.TopUp:output_type -> herd.v1.Wallet
+	9,  // 21: herd.v1.HerdService.GetWallet:output_type -> herd.v1.Wallet
+	14, // 22: herd.v1.HerdService.ListStatement:output_type -> herd.v1.ListStatementResponse
+	17, // [17:23] is the sub-list for method output_type
+	11, // [11:17] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_herd_v1_herd_proto_init() }
@@ -617,7 +1009,7 @@ func file_herd_v1_herd_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_herd_v1_herd_proto_rawDesc), len(file_herd_v1_herd_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

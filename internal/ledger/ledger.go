@@ -22,8 +22,8 @@ const (
 	Revenue  = "revenue"
 )
 
-func Wallet(holder string) string { return "wallet:" + holder }
-func Hold(leaseID string) string  { return "hold:" + leaseID }
+func WalletAccount(holder string) string { return "wallet:" + holder }
+func HoldAccount(leaseID string) string  { return "hold:" + leaseID }
 
 type Kind string
 

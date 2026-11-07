@@ -39,14 +39,14 @@ func TestValidate(t *testing.T) {
 func topUp(holder string, amount int64, key string) ledger.Entry {
 	return ledger.Entry{
 		Kind: ledger.KindTopUp, Holder: holder, IdempotencyKey: key,
-		Postings: []ledger.Posting{{ledger.External, -amount}, {ledger.Wallet(holder), amount}},
+		Postings: []ledger.Posting{{ledger.External, -amount}, {ledger.WalletAccount(holder), amount}},
 	}
 }
 
 func spend(holder string, amount int64, key string) ledger.Entry {
 	return ledger.Entry{
 		Kind: ledger.KindCapture, Holder: holder, IdempotencyKey: key,
-		Postings: []ledger.Posting{{ledger.Wallet(holder), -amount}, {ledger.Revenue, amount}},
+		Postings: []ledger.Posting{{ledger.WalletAccount(holder), -amount}, {ledger.Revenue, amount}},
 	}
 }
 
@@ -81,7 +81,7 @@ func TestPostIsIdempotent(t *testing.T) {
 		}
 	}
 
-	if b := balance(t, pool, ledger.Wallet("alice")); b != 100 {
+	if b := balance(t, pool, ledger.WalletAccount("alice")); b != 100 {
 		t.Errorf("wallet = %d, want 100", b)
 	}
 	if b := balance(t, pool, ledger.External); b != -100 {
@@ -99,7 +99,7 @@ func TestOverdraftIsRejected(t *testing.T) {
 	if _, err := post(ctx, pool, spend("alice", 11, "s1")); !errors.Is(err, ledger.ErrInsufficientFunds) {
 		t.Fatalf("got %v, want ErrInsufficientFunds", err)
 	}
-	if b := balance(t, pool, ledger.Wallet("alice")); b != 10 {
+	if b := balance(t, pool, ledger.WalletAccount("alice")); b != 10 {
 		t.Errorf("wallet = %d after rejected spend, want 10", b)
 	}
 }
@@ -134,7 +134,7 @@ func TestConcurrentSpendsNeverOverdraw(t *testing.T) {
 	if ok.Load() != 10 || refused.Load() != 40 {
 		t.Errorf("%d spends succeeded and %d refused, want 10 and 40", ok.Load(), refused.Load())
 	}
-	if b := balance(t, pool, ledger.Wallet("alice")); b != 0 {
+	if b := balance(t, pool, ledger.WalletAccount("alice")); b != 0 {
 		t.Errorf("wallet = %d, want 0", b)
 	}
 }
@@ -157,7 +157,7 @@ func TestDatabaseRejectsUnbalancedEntry(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unbalanced") {
 		t.Fatalf("got %v, want the commit to fail as unbalanced", err)
 	}
-	if b := balance(t, pool, ledger.Wallet("mallory")); b != 0 {
+	if b := balance(t, pool, ledger.WalletAccount("mallory")); b != 0 {
 		t.Errorf("mallory's wallet = %d, want 0", b)
 	}
 }
@@ -208,7 +208,7 @@ func TestRandomTrafficKeepsBooksBalanced(t *testing.T) {
 						continue
 					}
 					e = ledger.Entry{Kind: ledger.KindCapture, Holder: a, IdempotencyKey: key,
-						Postings: []ledger.Posting{{ledger.Wallet(a), -amount}, {ledger.Wallet(b), amount}}}
+						Postings: []ledger.Posting{{ledger.WalletAccount(a), -amount}, {ledger.WalletAccount(b), amount}}}
 				}
 
 				if _, err := post(ctx, pool, e); err != nil && !errors.Is(err, ledger.ErrInsufficientFunds) {

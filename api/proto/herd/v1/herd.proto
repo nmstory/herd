@@ -11,6 +11,11 @@ service HerdService {
     rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
     rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
     rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+
+    // Credits. Only available with the Postgres store.
+    rpc TopUp(TopUpRequest) returns (Wallet);
+    rpc GetWallet(GetWalletRequest) returns (Wallet);
+    rpc ListStatement(ListStatementRequest) returns (ListStatementResponse);
 }
 
 enum DeviceState {
@@ -60,3 +65,37 @@ message ReleaseLeaseRequest {
 }
 
 message ReleaseLeaseResponse {}
+message Wallet {
+    string holder = 1;
+    int64 available = 2;  // spendable credits
+    int64 held = 3;       // reserved by leases that haven't settled
+}
+
+message TopUpRequest {
+    string holder = 1;
+    int64 amount = 2;
+    string idempotency_key = 3;
+}
+
+message GetWalletRequest {
+    string holder = 1;
+}
+
+message ListStatementRequest {
+    string holder = 1;
+    int32 limit = 2;  // most recent entries; 0 means 50
+}
+
+message StatementLine {
+    int64 entry_id = 1;
+    string kind = 2;      // topup, hold, capture, expire
+    string lease_id = 3;
+    int64 amount = 4;     // change to the wallet
+    int64 charged = 5;    // credits charged for device time in this entry
+    int64 balance = 6;    // wallet balance after this entry
+    google.protobuf.Timestamp at = 7;
+}
+
+message ListStatementResponse {
+    repeated StatementLine lines = 1;
+}
